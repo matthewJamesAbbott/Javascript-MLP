@@ -121,7 +121,7 @@
     </div>
 
     <script>
-        // Activation Functions (keeping your existing implementation)
+        // Activation Functions
         class ActivationFunctions {
             static softmax(x) {
                 if (!(x instanceof Array)) return null;
@@ -192,7 +192,7 @@
             }
         }
 
-        // Enhanced Evaluation Functions with Epoch Support
+        // Evaluation Functions with Epoch Support
         class MLEvaluation {
             static kFoldCrossValidation(data, numFolds, mlp, epochs = null) {
                 const numSamples = data.length;
@@ -386,7 +386,6 @@
             }
         }
 
-        // Your existing MLP classes (keeping the same implementation)
         class TDataPoint {
             constructor(input, target) {
                 this.input = input;
