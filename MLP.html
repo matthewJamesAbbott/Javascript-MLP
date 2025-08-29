@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Layer Perceptron Trainer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; }
+        input, select, textarea, button { margin: 0.5rem 0; }
+        .section { margin-bottom: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 1rem;}
+        label { display: block; margin-top: 0.5rem;}
+    </style>
+</head>
+<body>
+    <h1>Multi-Layer Perceptron Trainer</h1>
+
+    <div class="section">
+        <h2>Network Configuration</h2>
+        <label>Input Size: <input type="number" id="inputSize" value="4" min="1"></label>
+        <label>Hidden Layer Sizes (comma separated): <input type="text" id="hiddenSizes" value="8,8,8"></label>
+        <label>Output Size: <input type="number" id="outputSize" value="3" min="1"></label>
+        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01"></label>
+        <label>Max Iterations: <input type="number" id="maxIterations" value="30" min="1"></label>
+        <button onclick="createNetwork()">Create Network</button>
+        <span id="networkStatus" style="margin-left:1rem;"></span>
+    </div>
+
+    <div class="section">
+        <h2>Load Training Data</h2>
+        <input type="file" id="csvFile" accept=".csv">
+        <button onclick="loadCSV()">Load CSV</button>
+        <span id="dataStatus"></span>
+        <br>
+        <label>Or paste CSV data:</label>
+        <textarea id="csvPaste" rows="5" cols="60"></textarea>
+        <button onclick="loadCSVText()">Load Pasted CSV</button>
+    </div>
+
+    <div class="section">
+        <h2>Save/Load Model</h2>
+        <button onclick="saveModel()">Save Model</button>
+        <button onclick="loadModel()">Load Model</button>
+        <input type="file" id="modelFile" accept=".json">
+        <span id="modelStatus"></span>
+    </div>
+
+    <div class="section">
+        <h2>Train Network</h2>
+        <button onclick="trainNetwork()">Train</button>
+        <div id="trainStatus"></div>
+    </div>
+
+    <div class="section">
+        <h2>Predict</h2>
+        <label>Input (comma separated): <input type="text" id="predictInput" value="0.5,0.5,0.5,0.5"></label>
+        <button onclick="predictInput()">Predict</button>
+        <div id="predictOutput"></div>
+    </div>
+
+    <script>
+        // The MLP Classes
+        class TDataPoint {
+            constructor(input, target) {
+                this.input = input;
+                this.target = target;
+            }
+        }
+
+        class TNeuron {
+            constructor() {
+                this.weights = [];
+                this.bias = 0;
+                this.output = 0;
+                this.error = 0;
+            }
+        }
+
+        class TLayer {
+            constructor() {
+                this.neurons = [];
+            }
+        }
+
+        class TMultiLayerPerceptron {
+            constructor(inputSize, hiddenSizes, outputSize) {
+                this.learningRate = 0.1;
+                this.maxIterations = 30;
+                this.inputLayer = new TLayer();
+                this.hiddenLayers = [];
+                this.outputLayer = new TLayer();
+                this.initialize(inputSize, hiddenSizes, outputSize);
+            }
+
+            initialize(inputSize, hiddenSizes, outputSize) {
+                // Input layer
+                this.inputLayer.neurons = [];
+                for (let i = 0; i < inputSize; i++) {
+                    this.inputLayer.neurons.push(new TNeuron());
+                    this.inputLayer.neurons[i].output = 0;
+                }
+                // Hidden layers
+                this.hiddenLayers = [];
+                let prevSize = inputSize;
+                hiddenSizes.forEach((size) => {
+                    let layer = new TLayer();
+                    for (let i = 0; i < size; i++) {
+                        let neuron = new TNeuron();
+                        neuron.weights = new Array(prevSize).fill(0).map(() => Math.random() - 0.5);
+                        neuron.bias = Math.random() - 0.5;
+                        layer.neurons.push(neuron);
+                    }
+                    this.hiddenLayers.push(layer);
+                    prevSize = size;
+                });
+                // Output layer
+                this.outputLayer = new TLayer();
+                for (let i = 0; i < outputSize; i++) {
+                    let neuron = new TNeuron();
+                    neuron.weights = new Array(prevSize).fill(0).map(() => Math.random() - 0.5);
+                    neuron.bias = Math.random() - 0.5;
+                    this.outputLayer.neurons.push(neuron);
+                }
+            }
+
+            feedForward(input) {
+                for (let i = 0; i < this.inputLayer.neurons.length; i++) {
+                    this.inputLayer.neurons[i].output = input[i];
+                }
+                let prevOutputs = input;
+                for (let k = 0; k < this.hiddenLayers.length; k++) {
+                    let curOutputs = [];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let sum = this.hiddenLayers[k].neurons[i].bias;
+                        for (let j = 0; j < prevOutputs.length; j++) {
+                            sum += prevOutputs[j] * this.hiddenLayers[k].neurons[i].weights[j];
+                        }
+                        this.hiddenLayers[k].neurons[i].output = 1 / (1 + Math.exp(-sum));
+                        curOutputs.push(this.hiddenLayers[k].neurons[i].output);
+                    }
+                    prevOutputs = curOutputs;
+                }
+                let output = [];
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    let sum = this.outputLayer.neurons[i].bias;
+                    for (let j = 0; j < prevOutputs.length; j++) {
+                        sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
+                    }
+                    this.outputLayer.neurons[i].output = 1 / (1 + Math.exp(-sum));
+                    output.push(this.outputLayer.neurons[i].output);
+                }
+                return output;
+            }
+
+            backPropagate(target) {
+                // Output layer error
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    let o = this.outputLayer.neurons[i].output;
+                    this.outputLayer.neurons[i].error = o * (1 - o) * (target[i] - o);
+                }
+                // Hidden layers error
+                for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let neuron = this.hiddenLayers[k].neurons[i];
+                        let sum = 0;
+                        if (k === this.hiddenLayers.length - 1) {
+                            // Next layer is output
+                            for (let j = 0; j < this.outputLayer.neurons.length; j++) {
+                                sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
+                            }
+                        } else {
+                            // Next layer is hidden
+                            for (let j = 0; j < this.hiddenLayers[k + 1].neurons.length; j++) {
+                                sum += this.hiddenLayers[k + 1].neurons[j].error * this.hiddenLayers[k + 1].neurons[j].weights[i];
+                            }
+                        }
+                        neuron.error = neuron.output * (1 - neuron.output) * sum;
+                    }
+                }
+            }
+
+            updateWeights(input) {
+                let prevOutputs = [input];
+                for (let k = 0; k < this.hiddenLayers.length; k++) {
+                    let outputs = [];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        outputs.push(this.hiddenLayers[k].neurons[i].output);
+                    }
+                    prevOutputs.push(outputs);
+                }
+                // Output layer weights
+                let lastHiddenOutputs = prevOutputs[prevOutputs.length - 1];
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    let neuron = this.outputLayer.neurons[i];
+                    for (let j = 0; j < neuron.weights.length; j++) {
+                        neuron.weights[j] += this.learningRate * neuron.error * lastHiddenOutputs[j];
+                    }
+                    neuron.bias += this.learningRate * neuron.error;
+                }
+                // Hidden layer weights
+                for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
+                    let prev = prevOutputs[k];
+                    for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        let neuron = this.hiddenLayers[k].neurons[i];
+                        for (let j = 0; j < neuron.weights.length; j++) {
+                            neuron.weights[j] += this.learningRate * neuron.error * prev[j];
+                        }
+                        neuron.bias += this.learningRate * neuron.error;
+                    }
+                }
+            }
+
+            predict(input) {
+                return this.feedForward(input);
+            }
+
+            train(input, target) {
+                this.feedForward(input);
+                this.backPropagate(target);
+                this.updateWeights(input);
+            }
+
+            toJSON() {
+                return JSON.stringify({
+                    learningRate: this.learningRate,
+                    maxIterations: this.maxIterations,
+                    inputSize: this.inputLayer.neurons.length,
+                    hiddenSizes: this.hiddenLayers.map(l => l.neurons.length),
+                    outputSize: this.outputLayer.neurons.length,
+                    hiddenLayers: this.hiddenLayers.map(layer => layer.neurons.map(n => ({
+                        weights: n.weights,
+                        bias: n.bias,
+                    }))),
+                    outputLayer: this.outputLayer.neurons.map(n => ({
+                        weights: n.weights,
+                        bias: n.bias,
+                    }))
+                });
+            }
+
+            static fromJSON(json) {
+                let obj = JSON.parse(json);
+                let mlp = new TMultiLayerPerceptron(obj.inputSize, obj.hiddenSizes, obj.outputSize);
+                mlp.learningRate = obj.learningRate;
+                mlp.maxIterations = obj.maxIterations;
+                // Hidden
+                for (let k = 0; k < mlp.hiddenLayers.length; k++) {
+                    for (let i = 0; i < mlp.hiddenLayers[k].neurons.length; i++) {
+                        mlp.hiddenLayers[k].neurons[i].weights = obj.hiddenLayers[k][i].weights;
+                        mlp.hiddenLayers[k].neurons[i].bias = obj.hiddenLayers[k][i].bias;
+                    }
+                }
+                // Output
+                for (let i = 0; i < mlp.outputLayer.neurons.length; i++) {
+                    mlp.outputLayer.neurons[i].weights = obj.outputLayer[i].weights;
+                    mlp.outputLayer.neurons[i].bias = obj.outputLayer[i].bias;
+                }
+                return mlp;
+            }
+        }
+
+        // Globals
+        let mlp = null;
+        let data = [];
+
+        // Helper CSV
+        function parseCSV(text) {
+            // First columns: inputs, then targets. Example: 0.1,0.2,0.1,0.3,1,0,0
+            let lines = text.trim().split("\n");
+            let points = [];
+            for (let line of lines) {
+                if (line.trim() === "") continue;
+                let arr = line.trim().split(",").map(Number);
+                let inputSize = parseInt(document.getElementById("inputSize").value);
+                let outputSize = parseInt(document.getElementById("outputSize").value);
+                let input = arr.slice(0, inputSize);
+                let target = arr.slice(inputSize, inputSize + outputSize);
+                if (input.length === inputSize && target.length === outputSize) {
+                    points.push(new TDataPoint(input, target));
+                }
+            }
+            return points;
+        }
+
+        // UI Functions
+
+        function createNetwork() {
+            let inputSize = parseInt(document.getElementById("inputSize").value);
+            let hiddenSizes = document.getElementById("hiddenSizes").value.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+            let outputSize = parseInt(document.getElementById("outputSize").value);
+            let learningRate = parseFloat(document.getElementById("learningRate").value);
+            let maxIterations = parseInt(document.getElementById("maxIterations").value);
+
+            mlp = new TMultiLayerPerceptron(inputSize, hiddenSizes, outputSize);
+            mlp.learningRate = learningRate;
+            mlp.maxIterations = maxIterations;
+            document.getElementById("networkStatus").innerText = "Network created!";
+        }
+
+        function loadCSV() {
+            let fileInput = document.getElementById("csvFile");
+            if (fileInput.files.length === 0) return;
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                data = parseCSV(e.target.result);
+                document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+            };
+            reader.readAsText(fileInput.files[0]);
+        }
+
+        function loadCSVText() {
+            let text = document.getElementById("csvPaste").value;
+            data = parseCSV(text);
+            document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+        }
+
+        function saveModel() {
+            if (!mlp) { alert("No model to save."); return; }
+            let json = mlp.toJSON();
+            let blob = new Blob([json], {type: "application/json"});
+            let a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "mlp-model.json";
+            a.click();
+            document.getElementById("modelStatus").innerText = "Model saved.";
+        }
+
+        function loadModel() {
+            let fileInput = document.getElementById("modelFile");
+            if (fileInput.files.length === 0) return;
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                mlp = TMultiLayerPerceptron.fromJSON(e.target.result);
+                document.getElementById("modelStatus").innerText = "Model loaded!";
+            };
+            reader.readAsText(fileInput.files[0]);
+        }
+
+        function trainNetwork() {
+            if (!mlp) { alert("Create a network first."); return; }
+            if (data.length === 0) { alert("Load training data first."); return; }
+            let maxIterations = mlp.maxIterations;
+            let statusDiv = document.getElementById("trainStatus");
+            statusDiv.innerText = "Training...";
+            setTimeout(() => {
+                for (let i = 0; i < maxIterations; i++) {
+                    for (let j = 0; j < data.length; j++) {
+                        mlp.train(data[j].input, data[j].target);
+                    }
+                }
+                statusDiv.innerText = `Training completed for ${maxIterations} iterations over ${data.length} data points.`;
+            }, 20);
+        }
+
+        function predictInput() {
+            if (!mlp) { alert("Create/load network first."); return; }
+            let input = document.getElementById("predictInput").value.split(",").map(Number);
+            if (input.length !== mlp.inputLayer.neurons.length) {
+                alert(`Input length must be ${mlp.inputLayer.neurons.length}`);
+                return;
+            }
+            let output = mlp.predict(input);
+            document.getElementById("predictOutput").innerText = "Output: " + output.map(x=>x.toFixed(4)).join(", ");
+        }
+    </script>
+</body>
+</html>
