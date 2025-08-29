@@ -804,6 +804,7 @@
         }
 
         function trainNetwork() {
+
             if (!mlp) { alert("Create a network first."); return; }
             if (data.length === 0) { alert("Load training data first."); return; }
 
@@ -898,6 +899,8 @@
                 `<strong>Raw Output:</strong> ${output.map(x => x.toFixed(4)).join(", ")}<br>
                  <strong>Predicted Class:</strong> ${predictedClass} (confidence: ${(output[predictedClass] * 100).toFixed(1)}%)`;
         }
+
     </script>
 </body>
 </html>
+
