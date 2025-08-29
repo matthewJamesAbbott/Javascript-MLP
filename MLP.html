@@ -1,22 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Multi-Layer Perceptron Trainer with Evaluation</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; }
-        input, select, textarea, button { margin: 0.5rem 0; }
-        .section { margin-bottom: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 1rem;}
-        label { display: block; margin-top: 0.5rem;}
-        .results { background-color: #f5f5f5; padding: 1rem; margin: 1rem 0; border-radius: 5px; }
-        .metric { margin: 0.5rem 0; font-weight: bold; }
-        table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .epoch-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-        .epoch-info { font-style: italic; color: #666; margin-top: 0.5rem; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+        }
+
+        input,
+        select,
+        textarea,
+        button {
+            margin: 0.5rem 0;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-top: 0.5rem;
+        }
+
+        .results {
+            background-color: #f5f5f5;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+        }
+
+        .metric {
+            margin: 0.5rem 0;
+            font-weight: bold;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        .epoch-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .epoch-info {
+            font-style: italic;
+            color: #666;
+            margin-top: 0.5rem;
+        }
     </style>
 </head>
+
 <body>
     <h1>Multi-Layer Perceptron Trainer with Evaluation</h1>
 
@@ -40,7 +95,8 @@
                 <option value="relu">ReLU</option>
             </select>
         </label>
-        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001" max="1"></label>
+        <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001"
+                max="1"></label>
         <button onclick="createNetwork()">Create Network</button>
         <span id="networkStatus" style="margin-left:1rem;"></span>
     </div>
@@ -115,7 +171,8 @@
 
     <div class="section">
         <h2>Predict</h2>
-        <label>Input (comma separated): <input type="text" id="predictInput" value="0.19,0.21,0.32,0.43,0.54,0.65,0.77,0.88,0.99,0.01"></label>
+        <label>Input (comma separated): <input type="text" id="predictInput"
+                value="0.19,0.21,0.32,0.43,0.54,0.65,0.77,0.88,0.99,0.01"></label>
         <button onclick="predictInput()">Predict</button>
         <div id="predictOutput"></div>
     </div>
@@ -123,6 +180,11 @@
     <script>
         // Activation Functions
         class ActivationFunctions {
+            /**
+             * The softmax function is used for output layer activation.
+             * @param {Array} x - The input array to the softmax function.
+             * @returns {Array} The output of the softmax function.
+             */
             static softmax(x) {
                 if (!(x instanceof Array)) return null;
 
@@ -137,6 +199,12 @@
                 return result;
             }
 
+            /**
+             * The derivative of the softmax function.
+             * @param {Array} labels - The output of the softmax function.
+             * @param {Array} x - The input array to the derivative of the softmax function.
+             * @returns {Array} The derivative of the softmax function.
+             */
             static dSoftmax(labels, x) {
                 if (!(x instanceof Array)) return null;
 
@@ -147,30 +215,66 @@
                 return result;
             }
 
+            /**
+             * The sigmoid function is used for hidden layer activation.
+             * @param {Number} x - The input to the sigmoid function.
+             * @returns {Number} The output of the sigmoid function.
+             */
             static sigmoid(x) {
                 return 1 / (1 + Math.exp(-x));
             }
 
+            /**
+             * The derivative of the sigmoid function.
+             * @param {Number} x - The input to the derivative of the sigmoid function.
+             * @returns {Number} The derivative of the sigmoid function.
+             */
             static dSigmoid(x) {
                 return x * (1 - x);
             }
 
+            /**
+             * The tanh function is used for hidden layer activation.
+             * @param {Number} x - The input to the tanh function.
+             * @returns {Number} The output of the tanh function.
+             */
             static tanh(x) {
                 return Math.tanh(x);
             }
 
+            /**
+             * The derivative of the tanh function.
+             * @param {Number} x - The input to the derivative of the tanh function.
+             * @returns {Number} The derivative of the tanh function.
+             */
             static dTanh(x) {
                 return 1 - (x * x);
             }
 
+            /**
+             * The ReLU function is used for hidden layer activation.
+             * @param {Number} x - The input to the ReLU function.
+             * @returns {Number} The output of the ReLU function.
+             */
             static relu(x) {
                 return Math.max(0, x);
             }
 
+            /**
+             * The derivative of the ReLU function.
+             * @param {Number} x - The input to the derivative of the ReLU function.
+             * @returns {Number} The derivative of the ReLU function.
+             */
             static dRelu(x) {
                 return x > 0 ? 1 : 0;
             }
 
+            /**
+             * Applies the specified activation function to the input.
+             * @param {String} activationType - The type of activation function to apply.
+             * @param {Array} x - The input to the activation function.
+             * @returns {Array} The output of the activation function.
+             */
             static apply(activationType, x) {
                 switch (activationType) {
                     case 'sigmoid': return this.sigmoid(x);
@@ -181,6 +285,13 @@
                 }
             }
 
+            /**
+             * Applies the derivative of the specified activation function to the input.
+             * @param {String} activationType - The type of activation function to apply.
+             * @param {Number} x - The input to the derivative of the activation function.
+             * @param {Array} target - The target output of the derivative of the activation function.
+             * @returns {Number} The derivative of the activation function.
+             */
             static applyDerivative(activationType, x, target = null) {
                 switch (activationType) {
                     case 'sigmoid': return this.dSigmoid(x);
@@ -194,6 +305,14 @@
 
         // Evaluation Functions with Epoch Support
         class MLEvaluation {
+            /**
+             * Performs K-Fold Cross Validation on the MLP.
+             * @param {Array} data - The training data.
+             * @param {Number} numFolds - The number of folds to perform.
+             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
+             * @param {Number} epochs - The number of epochs to train for each fold.
+             * @returns {Number} The average accuracy of the MLP on the K-Fold Cross Validation.
+             */
             static kFoldCrossValidation(data, numFolds, mlp, epochs = null) {
                 const numSamples = data.length;
                 const foldSize = Math.floor(numSamples / numFolds);
@@ -246,12 +365,25 @@
                 return sumAccuracy / numSamples;
             }
 
+            /**
+             * Clones the MLP for independent training.
+             * @param {TMultiLayerPerceptron} mlp - The MLP to clone.
+             * @returns {TMultiLayerPerceptron} The cloned MLP.
+             */
             static cloneMLP(mlp) {
                 // Create a deep copy of the MLP for independent training
                 const jsonStr = mlp.toJSON();
                 return TMultiLayerPerceptron.fromJSON(jsonStr);
             }
 
+            /**
+             * Trains the MLP with batches.
+             * @param {TMultiLayerPerceptron} mlp - The MLP to train.
+             * @param {Array} data - The training data.
+             * @param {Number} epochs - The number of epochs to train for.
+             * @param {String} batchSize - The batch size to use.
+             * @param {Function} progressCallback - The callback function to call after each epoch.
+             */
             static trainWithBatches(mlp, data, epochs, batchSize, progressCallback = null) {
                 const totalSamples = data.length;
                 let actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize);
@@ -280,6 +412,13 @@
                 }
             }
 
+            /**
+             * Calculates the precision score of the MLP.
+             * @param {Array} data - The data to evaluate.
+             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
+             * @param {Number} classIndex - The class index to evaluate.
+             * @returns {Number} The precision score of the MLP.
+             */
             static precisionScore(data, mlp, classIndex = 0) {
                 let truePositives = 0;
                 let falsePositives = 0;
@@ -304,6 +443,13 @@
                 return truePositives / (truePositives + falsePositives);
             }
 
+            /**
+             * Calculates the recall score of the MLP.
+             * @param {Array} data - The data to evaluate.
+             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
+             * @param {Number} classIndex - The class index to evaluate.
+             * @returns {Number} The recall score of the MLP.
+             */
             static recallScore(data, mlp, classIndex = 0) {
                 let truePositives = 0;
                 let falseNegatives = 0;
@@ -328,6 +474,12 @@
                 return truePositives / (truePositives + falseNegatives);
             }
 
+            /**
+             * Calculates the F1 score of the MLP.
+             * @param {Number} precision - The precision score of the MLP.
+             * @param {Number} recall - The recall score of the MLP.
+             * @returns {Number} The F1 score of the MLP.
+             */
             static f1Score(precision, recall) {
                 if (precision + recall === 0) {
                     return 0;
@@ -335,6 +487,11 @@
                 return 2 * (precision * recall) / (precision + recall);
             }
 
+            /**
+             * Gets the index of the maximum value in the array.
+             * @param {Array} array - The array to find the maximum value in.
+             * @returns {Number} The index of the maximum value in the array.
+             */
             static getMaxIndex(array) {
                 let maxIndex = 0;
                 for (let i = 1; i < array.length; i++) {
@@ -345,6 +502,13 @@
                 return maxIndex;
             }
 
+            /**
+             * Generates test data for the MLP.
+             * @param {Number} samplesPerClass - The number of samples per class.
+             * @param {Number} inputSize - The size of the input.
+             * @param {Number} numClasses - The number of classes.
+             * @returns {Array} The generated test data.
+             */
             static generateTestData(samplesPerClass, inputSize, numClasses) {
                 const data = [];
 
@@ -387,6 +551,11 @@
         }
 
         class TDataPoint {
+            /**
+             * Creates a new TDataPoint object.
+             * @param {Array} input - The input of the data point.
+             * @param {Array} target - The target of the data point.
+             */
             constructor(input, target) {
                 this.input = input;
                 this.target = target;
@@ -394,6 +563,9 @@
         }
 
         class TNeuron {
+            /**
+             * Creates a new TNeuron object.
+             */
             constructor() {
                 this.weights = [];
                 this.bias = 0;
@@ -403,6 +575,9 @@
         }
 
         class TLayer {
+            /**
+             * Creates a new TLayer object.
+             */
             constructor() {
                 this.neurons = [];
                 this.activationType = 'sigmoid';
@@ -410,6 +585,14 @@
         }
 
         class TMultiLayerPerceptron {
+            /**
+             * Creates a new TMultiLayerPerceptron object.
+             * @param {Number} inputSize - The size of the input.
+             * @param {Array} hiddenSizes - The sizes of the hidden layers.
+             * @param {Number} outputSize - The size of the output.
+             * @param {String} hiddenActivation - The activation function of the hidden layers.
+             * @param {String} outputActivation - The activation function of the output layer.
+             */
             constructor(inputSize, hiddenSizes, outputSize, hiddenActivation = 'sigmoid', outputActivation = 'sigmoid') {
                 this.learningRate = 0.1;
                 this.inputLayer = new TLayer();
@@ -420,6 +603,11 @@
                 this.initialize(inputSize, hiddenSizes, outputSize);
             }
 
+            /**
+             * Initializes the weights of the neurons in the input layer.
+             * @param {Number} inputSize - The size of the input.
+             * @returns {Array} The weights of the neurons in the input layer.
+             */
             initializeWeights(inputSize) {
                 const limit = Math.sqrt(6 / inputSize);
                 return new Array(inputSize).fill(0).map(() =>
@@ -427,6 +615,12 @@
                 );
             }
 
+            /**
+             * Initializes the MLP.
+             * @param {Number} inputSize - The size of the input.
+             * @param {Array} hiddenSizes - The sizes of the hidden layers.
+             * @param {Number} outputSize - The size of the output.
+             */
             initialize(inputSize, hiddenSizes, outputSize) {
                 // Input layer
                 this.inputLayer.neurons = [];
@@ -462,58 +656,141 @@
                 }
             }
 
+            /**
+             * Feeds the input forward through the MLP.
+             * @param {Array} input - The input to the MLP.
+             * @returns {Array} The output of the MLP.
+             */
             feedForward(input) {
                 for (let i = 0; i < this.inputLayer.neurons.length; i++) {
                     this.inputLayer.neurons[i].output = input[i];
                 }
 
+                /**
+                * Initialize the previous outputs with the input.
+                */
                 let prevOutputs = input;
 
+                /**
+                 * Propagate the output through the hidden layers.
+                 */
                 for (let k = 0; k < this.hiddenLayers.length; k++) {
+                    /**
+                     * Initialize the current outputs array.
+                     */
                     let curOutputs = [];
+
+                    /**
+                     * Calculate the output of each neuron in the current layer.
+                     */
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                        /**
+                         * Initialize the sum of the weighted inputs to the neuron.
+                         */
                         let sum = this.hiddenLayers[k].neurons[i].bias;
+
+                        /**
+                         * Calculate the weighted sum of the inputs to the neuron.
+                         */
                         for (let j = 0; j < prevOutputs.length; j++) {
                             sum += prevOutputs[j] * this.hiddenLayers[k].neurons[i].weights[j];
                         }
+
+                        /**
+                         * Calculate the output of the neuron using the activation function.
+                         */
                         this.hiddenLayers[k].neurons[i].output = ActivationFunctions.apply(
                             this.hiddenLayers[k].activationType, sum
                         );
+
+                        /**
+                         * Add the output of the neuron to the current outputs array.
+                         */
                         curOutputs.push(this.hiddenLayers[k].neurons[i].output);
                     }
+
+                    /**
+                     * Update the previous outputs with the current outputs.
+                     */
                     prevOutputs = curOutputs;
                 }
 
+                /**
+                 * Calculate the output of the output layer.
+                 */
                 let outputSums = [];
                 for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    /**
+                     * Initialize the sum of the weighted inputs to the neuron.
+                     */
                     let sum = this.outputLayer.neurons[i].bias;
+
+                    /**
+                     * Calculate the weighted sum of the inputs to the neuron.
+                     */
                     for (let j = 0; j < prevOutputs.length; j++) {
                         sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
                     }
+
+                    /**
+                     * Add the output of the neuron to the output sums array.
+                     */
                     outputSums.push(sum);
                 }
 
+                /**
+                 * Calculate the output of the neural network.
+                 */
                 let output;
                 if (this.outputActivation === 'softmax') {
+                    /**
+                     * If the output activation function is softmax, calculate the output using the softmax function.
+                     */
                     output = ActivationFunctions.softmax(outputSums);
+                    /**
+                     * Update the output of the output layer.
+                     */
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                         this.outputLayer.neurons[i].output = output[i];
                     }
                 } else {
+                    /**
+                     * If the output activation function is not softmax, calculate the output using the activation function.
+                     */
                     output = [];
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        /**
+                         * Calculate the output of the neuron using the activation function.
+                         */
                         this.outputLayer.neurons[i].output = ActivationFunctions.apply(
                             this.outputActivation, outputSums[i]
                         );
+
+                        /**
+                         * Add the output of the neuron to the output array.
+                         */
                         output.push(this.outputLayer.neurons[i].output);
                     }
                 }
 
+                /**
+                 * Return the output of the neural network.
+                 */
                 return output;
             }
 
+            /**
+             * Performs backpropagation to calculate error gradients for all neurons in the network.
+             * This implements the backward pass of the backpropagation algorithm, computing how much
+             * each neuron contributed to the final error and storing this in the neuron's error property.
+             * @param {Array} target - The expected output values (target labels) for the current training example.
+             */
+
             backPropagate(target) {
+                // Calculate errors for output layer neurons
                 if (this.outputActivation === 'softmax') {
+                    // For softmax activation, use cross-entropy derivative
+                    // This directly computes (target - predicted) for each output neuron
                     let derivatives = ActivationFunctions.dSoftmax(target,
                         this.outputLayer.neurons.map(n => n.output)
                     );
@@ -521,6 +798,8 @@
                         this.outputLayer.neurons[i].error = derivatives[i];
                     }
                 } else {
+                    // For other activation functions, use standard error calculation
+                    // Error = derivative(activation) * (target - actual)
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                         let o = this.outputLayer.neurons[i].output;
                         let derivative = ActivationFunctions.applyDerivative(this.outputActivation, o);
@@ -528,16 +807,20 @@
                     }
                 }
 
+                // Propagate errors backward through hidden layers (from last to first)
                 for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
                         let neuron = this.hiddenLayers[k].neurons[i];
                         let sum = 0;
 
+                        // Calculate weighted sum of errors from the next layer
                         if (k === this.hiddenLayers.length - 1) {
+                            // This is the last hidden layer, so get errors from output layer
                             for (let j = 0; j < this.outputLayer.neurons.length; j++) {
                                 sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
                             }
                         } else {
+                            // Get errors from the next hidden layer
                             for (let j = 0; j < this.hiddenLayers[k + 1].neurons.length; j++) {
                                 sum += this.hiddenLayers[k + 1].neurons[j].error * this.hiddenLayers[k + 1].neurons[j].weights[i];
                             }
@@ -836,9 +1119,9 @@
                     progressDiv.innerHTML = `
                         <div>Epoch: ${currentEpoch} / ${totalEpochs}</div>
                         <div style="width: 300px; background-color: #f0f0f0; border-radius: 5px; margin-top: 5px;">
-                            <div style="width: ${(currentEpoch/totalEpochs)*100}%; background-color: #4CAF50; height: 20px; border-radius: 5px;"></div>
+                            <div style="width: ${(currentEpoch / totalEpochs) * 100}%; background-color: #4CAF50; height: 20px; border-radius: 5px;"></div>
                         </div>
-                        <div>${((currentEpoch/totalEpochs)*100).toFixed(1)}% Complete</div>
+                        <div>${((currentEpoch / totalEpochs) * 100).toFixed(1)}% Complete</div>
                     `;
                 });
 
@@ -850,7 +1133,7 @@
             let fileInput = document.getElementById("csvFile");
             if (fileInput.files.length === 0) return;
             let reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 data = parseCSV(e.target.result);
                 document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
             };
@@ -866,7 +1149,7 @@
         function saveModel() {
             if (!mlp) { alert("No model to save."); return; }
             let json = mlp.toJSON();
-            let blob = new Blob([json], {type: "application/json"});
+            let blob = new Blob([json], { type: "application/json" });
             let a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = "mlp-model.json";
@@ -878,7 +1161,7 @@
             let fileInput = document.getElementById("modelFile");
             if (fileInput.files.length === 0) return;
             let reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 mlp = TMultiLayerPerceptron.fromJSON(e.target.result);
                 document.getElementById("modelStatus").innerText = "Model loaded!";
             };
@@ -901,5 +1184,5 @@
 
     </script>
 </body>
-</html>
 
+</html>
