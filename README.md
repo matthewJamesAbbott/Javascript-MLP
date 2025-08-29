@@ -34,5 +34,3 @@ Make sure you have a modern web browser installed.
    git clone https://github.com/matthewJamesAbbott/Javascript-MLP.git
    ```
 2. Open the `MLP.html` file in your web browser.
-
-or use MLP.js in your frontend stack.
