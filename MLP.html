@@ -825,7 +825,8 @@
                                 sum += this.hiddenLayers[k + 1].neurons[j].error * this.hiddenLayers[k + 1].neurons[j].weights[i];
                             }
                         }
-
+                        // Calculate this neuron's error using the chain rule
+                        // Error = derivative(activation) * weighted_sum_of_next_layer_errors
                         let derivative = ActivationFunctions.applyDerivative(
                             this.hiddenLayers[k].activationType, neuron.output
                         );
@@ -833,8 +834,14 @@
                     }
                 }
             }
-
+            /**
+            * Updates all weights and biases in the network using the calculated error gradients.
+            * This implements the weight update step of the backpropagation algorithm using gradient descent.
+            * @param {Array} input - The original input values used for this training example.
+            */
             updateWeights(input) {
+                // Collect outputs from each layer for weight updates
+                // layerOutputs[0] = input layer, layerOutputs[1] = first hidden layer, etc.
                 let layerOutputs = [input];
                 for (let k = 0; k < this.hiddenLayers.length; k++) {
                     let outputs = [];
