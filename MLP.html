@@ -958,6 +958,7 @@
                     }
                 }
 
+                // Restore weights and biases for output layer
                 if (obj.outputLayer.activationType) {
                     mlp.outputLayer.activationType = obj.outputLayer.activationType;
                 }
@@ -972,19 +973,36 @@
 
         // Globals
         let mlp = null;
+
+        /**
+        * Global array to store training data points.
+        * Each element is a TDataPoint containing input and target arrays.
+        * @type {Array<TDataPoint>}
+        */
         let data = [];
 
         // Helper CSV
+        /**
+        * Parses CSV text data into an array of TDataPoint objects.
+        * Expected format: each line contains input values followed by target values, comma-separated.
+        * The number of input and output values is determined by the current UI settings.
+        * @param {String} text - Raw CSV text with comma-separated values.
+        * @returns {Array<TDataPoint>} Array of parsed data points ready for training.
+        */
         function parseCSV(text) {
             let lines = text.trim().split("\n");
             let points = [];
             for (let line of lines) {
                 if (line.trim() === "") continue;
+                
+                // Extract input and target portions from the CSV line
                 let arr = line.trim().split(",").map(Number);
                 let inputSize = parseInt(document.getElementById("inputSize").value);
                 let outputSize = parseInt(document.getElementById("outputSize").value);
                 let input = arr.slice(0, inputSize);
                 let target = arr.slice(inputSize, inputSize + outputSize);
+
+                // Only add valid data points with correct dimensions
                 if (input.length === inputSize && target.length === outputSize) {
                     points.push(new TDataPoint(input, target));
                 }
@@ -993,6 +1011,11 @@
         }
 
         // UI Functions
+        /**
+        * Creates a new neural network based on current UI configuration settings.
+        * Reads all network parameters from the HTML form and initializes a new MLP instance.
+        * Updates the UI to show network creation status.
+        */
         function createNetwork() {
             let inputSize = parseInt(document.getElementById("inputSize").value);
             let hiddenSizes = document.getElementById("hiddenSizes").value
