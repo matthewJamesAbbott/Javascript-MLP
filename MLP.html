@@ -850,32 +850,50 @@
                     }
                     layerOutputs.push(outputs);
                 }
-
+                
+                // Update output layer weights and biases
                 let lastHiddenOutputs = layerOutputs[layerOutputs.length - 1];
                 for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                     let neuron = this.outputLayer.neurons[i];
+                    // Update each weight: weight += learning_rate * error * input_from_previous_layer
                     for (let j = 0; j < neuron.weights.length; j++) {
                         neuron.weights[j] += this.learningRate * neuron.error * lastHiddenOutputs[j];
                     }
+                    // Update bias: bias += learning_rate * error
                     neuron.bias += this.learningRate * neuron.error;
                 }
 
+                // Update hidden layer weights and biases (from last to first)
                 for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
                     let prevLayerOutputs = layerOutputs[k];
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
                         let neuron = this.hiddenLayers[k].neurons[i];
+                        // Update each weight using gradient descent
                         for (let j = 0; j < neuron.weights.length; j++) {
                             neuron.weights[j] += this.learningRate * neuron.error * prevLayerOutputs[j];
                         }
+                        // Update bias
                         neuron.bias += this.learningRate * neuron.error;
                     }
                 }
             }
 
+            /**
+            * Makes a prediction for the given input without updating weights.
+            * This is used for inference after training is complete.
+            * @param {Array} input - The input values to make a prediction for.
+            * @returns {Array} The predicted output values from the network.
+            */
             predict(input) {
                 return this.feedForward(input);
             }
 
+            /**
+            * Performs one complete training step: forward pass, backward pass, and weight update.
+            * This is the main training method that combines all phases of the learning process.
+            * @param {Array} input - The input values for this training example.
+            * @param {Array} target - The expected output values for this training example.
+            */
             train(input, target) {
                 this.feedForward(input);
                 this.backPropagate(target);
