@@ -1025,12 +1025,21 @@
             let hiddenActivation = document.getElementById("hiddenActivation").value;
             let outputActivation = document.getElementById("outputActivation").value;
 
+            // Create new MLP with specified configuration
             mlp = new TMultiLayerPerceptron(inputSize, hiddenSizes, outputSize, hiddenActivation, outputActivation);
             mlp.learningRate = learningRate;
+
+            // Update UI status
             document.getElementById("networkStatus").innerText =
                 `Network created! Hidden: ${hiddenActivation}, Output: ${outputActivation}`;
         }
 
+        
+        /**
+        * Generates synthetic test data for training and evaluation.
+        * Creates different patterns for each class to enable meaningful classification testing.
+        * Updates the global data array and UI status display.
+        */
         function generateTestData() {
             let samplesPerClass = parseInt(document.getElementById("samplesPerClass").value);
             let inputSize = parseInt(document.getElementById("inputSize").value);
