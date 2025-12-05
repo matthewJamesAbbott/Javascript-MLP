@@ -33,4 +33,7 @@ Make sure you have a modern web browser installed.
    ```bash
    git clone https://github.com/matthewJamesAbbott/Javascript-MLP.git
    ```
-2. Open the `MLP.html` file in your web browser.
+2. Open the `index.html` file in your web browser.
+
+## Vercel Link
+https://javascript-mlp.vercel.app/
