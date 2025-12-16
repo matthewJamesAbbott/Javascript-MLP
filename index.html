@@ -69,6 +69,22 @@
             color: #666;
             margin-top: 0.5rem;
         }
+
+        .warning {
+            color: #b36b00;
+            background-color: #fff3cd;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+
+        .error-msg {
+            color: #721c24;
+            background-color: #f8d7da;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
     </style>
 </head>
 
@@ -97,8 +113,21 @@
         </label>
         <label>Learning Rate: <input type="number" id="learningRate" value="0.1" step="0.01" min="0.001"
                 max="1"></label>
+        <label>Optimizer:
+            <select id="optimizer">
+                <option value="sgd" selected>SGD</option>
+                <option value="adam">Adam</option>
+                <option value="rmsprop">RMSProp</option>
+            </select>
+        </label>
         <button onclick="createNetwork()">Create Network</button>
         <span id="networkStatus" style="margin-left:1rem;"></span>
+    </div>
+
+    <div class="section">
+        <h2>Regularization</h2>
+        <label>Dropout Rate (0-1): <input type="number" id="dropoutRate" value="0" step="0.1" min="0" max="0.9"></label>
+        <label>L2 Regularization (lambda): <input type="number" id="l2Lambda" value="0" step="0.0001" min="0" max="0.1"></label>
     </div>
 
     <div class="section">
@@ -120,6 +149,15 @@
                 </select>
             </label>
         </div>
+        <label>
+            <input type="checkbox" id="enableLRDecay"> Enable Learning Rate Decay
+            <input type="number" id="lrDecayRate" value="0.95" step="0.01" min="0.5" max="1" style="width:60px"> per
+            <input type="number" id="lrDecayEpochs" value="10" step="1" min="1" style="width:50px"> epochs
+        </label>
+        <label>
+            <input type="checkbox" id="enableEarlyStopping"> Enable Early Stopping after
+            <input type="number" id="earlyStoppingPatience" value="10" step="1" min="1" style="width:50px"> epochs without improvement
+        </label>
         <div class="epoch-info">
             ℹ️ Training Epochs: Full passes through training data for regular training<br>
             ℹ️ Validation Epochs: Epochs used for each fold in K-Fold cross-validation<br>
@@ -132,10 +170,13 @@
         <input type="file" id="csvFile" accept=".csv">
         <button onclick="loadCSV()">Load CSV</button>
         <span id="dataStatus"></span>
+        <div id="dataWarnings"></div>
         <br>
         <label>Or paste CSV data:</label>
         <textarea id="csvPaste" rows="5" cols="60"></textarea>
         <button onclick="loadCSVText()">Load Pasted CSV</button>
+        <br>
+        <label><input type="checkbox" id="normalizeData" checked> Normalize input features to [0,1]</label>
     </div>
 
     <div class="section">
@@ -167,6 +208,7 @@
         <button onclick="trainNetworkWithProgress()">Train with Progress</button>
         <div id="trainStatus"></div>
         <div id="trainingProgress"></div>
+        <div id="validationLossChart"></div>
     </div>
 
     <div class="section">
@@ -178,103 +220,82 @@
     </div>
 
     <script>
-        // Activation Functions
+        const EPSILON = 1e-15;
+
         class ActivationFunctions {
-            /**
-             * The softmax function is used for output layer activation.
-             * @param {Array} x - The input array to the softmax function.
-             * @returns {Array} The output of the softmax function.
-             */
             static softmax(x) {
                 if (!(x instanceof Array)) return null;
 
+                const maxVal = Math.max(...x);
                 let sum = 0;
+                const expValues = [];
                 for (let i = 0; i < x.length; i++) {
-                    sum += Math.exp(x[i]);
+                    const expVal = Math.exp(x[i] - maxVal);
+                    expValues.push(expVal);
+                    sum += expVal;
                 }
-                let result = [];
+
+                const result = [];
                 for (let i = 0; i < x.length; i++) {
-                    result[i] = Math.exp(x[i]) / sum;
+                    let prob = expValues[i] / sum;
+                    prob = Math.max(EPSILON, Math.min(1 - EPSILON, prob));
+                    result.push(prob);
                 }
                 return result;
             }
 
-            /**
-             * The derivative of the softmax function.
-             * @param {Array} labels - The output of the softmax function.
-             * @param {Array} x - The input array to the derivative of the softmax function.
-             * @returns {Array} The derivative of the softmax function.
-             */
             static dSoftmax(labels, x) {
                 if (!(x instanceof Array)) return null;
 
-                let result = [];
+                const result = [];
                 for (let i = 0; i < x.length; i++) {
                     result[i] = labels[i] - x[i];
                 }
                 return result;
             }
 
-            /**
-             * The sigmoid function is used for hidden layer activation.
-             * @param {Number} x - The input to the sigmoid function.
-             * @returns {Number} The output of the sigmoid function.
-             */
             static sigmoid(x) {
-                return 1 / (1 + Math.exp(-x));
+                if (Array.isArray(x)) {
+                    return x.map(val => 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, val)))));
+                }
+                return 1 / (1 + Math.exp(-Math.max(-500, Math.min(500, x))));
             }
 
-            /**
-             * The derivative of the sigmoid function.
-             * @param {Number} x - The input to the derivative of the sigmoid function.
-             * @returns {Number} The derivative of the sigmoid function.
-             */
             static dSigmoid(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => val * (1 - val));
+                }
                 return x * (1 - x);
             }
 
-            /**
-             * The tanh function is used for hidden layer activation.
-             * @param {Number} x - The input to the tanh function.
-             * @returns {Number} The output of the tanh function.
-             */
             static tanh(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => Math.tanh(val));
+                }
                 return Math.tanh(x);
             }
 
-            /**
-             * The derivative of the tanh function.
-             * @param {Number} x - The input to the derivative of the tanh function.
-             * @returns {Number} The derivative of the tanh function.
-             */
             static dTanh(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => 1 - (val * val));
+                }
                 return 1 - (x * x);
             }
 
-            /**
-             * The ReLU function is used for hidden layer activation.
-             * @param {Number} x - The input to the ReLU function.
-             * @returns {Number} The output of the ReLU function.
-             */
             static relu(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => Math.max(0, val));
+                }
                 return Math.max(0, x);
             }
 
-            /**
-             * The derivative of the ReLU function.
-             * @param {Number} x - The input to the derivative of the ReLU function.
-             * @returns {Number} The derivative of the ReLU function.
-             */
             static dRelu(x) {
+                if (Array.isArray(x)) {
+                    return x.map(val => val > 0 ? 1 : 0);
+                }
                 return x > 0 ? 1 : 0;
             }
 
-            /**
-             * Applies the specified activation function to the input.
-             * @param {String} activationType - The type of activation function to apply.
-             * @param {Array} x - The input to the activation function.
-             * @returns {Array} The output of the activation function.
-             */
             static apply(activationType, x) {
                 switch (activationType) {
                     case 'sigmoid': return this.sigmoid(x);
@@ -285,13 +306,6 @@
                 }
             }
 
-            /**
-             * Applies the derivative of the specified activation function to the input.
-             * @param {String} activationType - The type of activation function to apply.
-             * @param {Number} x - The input to the derivative of the activation function.
-             * @param {Array} target - The target output of the derivative of the activation function.
-             * @returns {Number} The derivative of the activation function.
-             */
             static applyDerivative(activationType, x, target = null) {
                 switch (activationType) {
                     case 'sigmoid': return this.dSigmoid(x);
@@ -303,51 +317,36 @@
             }
         }
 
-        // Evaluation Functions with Epoch Support
         class MLEvaluation {
-            /**
-             * Performs K-Fold Cross Validation on the MLP.
-             * @param {Array} data - The training data.
-             * @param {Number} numFolds - The number of folds to perform.
-             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
-             * @param {Number} epochs - The number of epochs to train for each fold.
-             * @returns {Number} The average accuracy of the MLP on the K-Fold Cross Validation.
-             */
             static kFoldCrossValidation(data, numFolds, mlp, epochs = null) {
                 const numSamples = data.length;
                 const foldSize = Math.floor(numSamples / numFolds);
                 let sumAccuracy = 0;
 
-                // Use validation epochs if provided, otherwise use training epochs
                 const validationEpochs = epochs || parseInt(document.getElementById("validationEpochs").value);
 
                 for (let i = 0; i < numFolds; i++) {
-                    // Create a fresh copy of the MLP for each fold
                     const foldMLP = this.cloneMLP(mlp);
 
-                    // Create test set for fold i
                     const testSet = [];
                     for (let j = 0; j < foldSize; j++) {
                         testSet.push(data[i * foldSize + j]);
                     }
 
-                    // Create training set for fold i (all data except test set)
                     const trainSet = [];
                     for (let j = 0; j < numSamples; j++) {
                         if (j >= i * foldSize && j < (i + 1) * foldSize) {
-                            continue; // Skip test set data
+                            continue;
                         }
                         trainSet.push(data[j]);
                     }
 
-                    // Train MLP on training set for specified epochs
                     for (let epoch = 0; epoch < validationEpochs; epoch++) {
                         for (let k = 0; k < trainSet.length; k++) {
                             foldMLP.train(trainSet[k].input, trainSet[k].target);
                         }
                     }
 
-                    // Evaluate accuracy on test set
                     let correctPredictions = 0;
                     for (let j = 0; j < testSet.length; j++) {
                         const prediction = foldMLP.predict(testSet[j].input);
@@ -365,60 +364,89 @@
                 return sumAccuracy / numSamples;
             }
 
-            /**
-             * Clones the MLP for independent training.
-             * @param {TMultiLayerPerceptron} mlp - The MLP to clone.
-             * @returns {TMultiLayerPerceptron} The cloned MLP.
-             */
             static cloneMLP(mlp) {
-                // Create a deep copy of the MLP for independent training
                 const jsonStr = mlp.toJSON();
                 return TMultiLayerPerceptron.fromJSON(jsonStr);
             }
 
-            /**
-             * Trains the MLP with batches.
-             * @param {TMultiLayerPerceptron} mlp - The MLP to train.
-             * @param {Array} data - The training data.
-             * @param {Number} epochs - The number of epochs to train for.
-             * @param {String} batchSize - The batch size to use.
-             * @param {Function} progressCallback - The callback function to call after each epoch.
-             */
             static trainWithBatches(mlp, data, epochs, batchSize, progressCallback = null) {
                 const totalSamples = data.length;
                 let actualBatchSize = batchSize === 'all' ? totalSamples : parseInt(batchSize);
+                
+                if (actualBatchSize > totalSamples) {
+                    actualBatchSize = totalSamples;
+                }
+
+                const enableLRDecay = document.getElementById("enableLRDecay")?.checked || false;
+                const lrDecayRate = parseFloat(document.getElementById("lrDecayRate")?.value || 0.95);
+                const lrDecayEpochs = parseInt(document.getElementById("lrDecayEpochs")?.value || 10);
+                const initialLR = mlp.learningRate;
+
+                const enableEarlyStopping = document.getElementById("enableEarlyStopping")?.checked || false;
+                const patience = parseInt(document.getElementById("earlyStoppingPatience")?.value || 10);
+                let bestLoss = Infinity;
+                let epochsWithoutImprovement = 0;
+                const validationLosses = [];
+
+                const validationSplit = 0.1;
+                const shuffledData = [...data].sort(() => Math.random() - 0.5);
+                const valSize = Math.floor(shuffledData.length * validationSplit);
+                const valData = shuffledData.slice(0, valSize);
+                const trainData = shuffledData.slice(valSize);
 
                 for (let epoch = 0; epoch < epochs; epoch++) {
-                    // Shuffle data for each epoch
-                    const shuffledData = [...data].sort(() => Math.random() - 0.5);
+                    if (enableLRDecay && epoch > 0 && epoch % lrDecayEpochs === 0) {
+                        mlp.learningRate *= lrDecayRate;
+                    }
 
-                    for (let i = 0; i < totalSamples; i += actualBatchSize) {
-                        const batch = shuffledData.slice(i, Math.min(i + actualBatchSize, totalSamples));
+                    const epochData = [...trainData].sort(() => Math.random() - 0.5);
 
-                        // Train on batch
+                    for (let i = 0; i < epochData.length; i += actualBatchSize) {
+                        const batchEnd = Math.min(i + actualBatchSize, epochData.length);
+                        const batch = epochData.slice(i, batchEnd);
+
                         for (let j = 0; j < batch.length; j++) {
                             mlp.train(batch[j].input, batch[j].target);
                         }
                     }
 
-                    // Call progress callback if provided
+                    if (enableEarlyStopping && valData.length > 0) {
+                        let valLoss = 0;
+                        for (let j = 0; j < valData.length; j++) {
+                            const pred = mlp.predict(valData[j].input);
+                            valLoss += mlp.computeLoss(pred, valData[j].target);
+                        }
+                        valLoss /= valData.length;
+                        validationLosses.push(valLoss);
+
+                        if (valLoss < bestLoss - EPSILON) {
+                            bestLoss = valLoss;
+                            epochsWithoutImprovement = 0;
+                        } else {
+                            epochsWithoutImprovement++;
+                        }
+
+                        if (epochsWithoutImprovement >= patience) {
+                            if (progressCallback) {
+                                progressCallback(epoch + 1, epochs, validationLosses, true);
+                            }
+                            mlp.learningRate = initialLR;
+                            return;
+                        }
+                    }
+
                     if (progressCallback && epoch % 10 === 0) {
-                        progressCallback(epoch + 1, epochs);
+                        progressCallback(epoch + 1, epochs, validationLosses, false);
                     }
                 }
 
+                mlp.learningRate = initialLR;
+
                 if (progressCallback) {
-                    progressCallback(epochs, epochs); // Final update
+                    progressCallback(epochs, epochs, validationLosses, false);
                 }
             }
 
-            /**
-             * Calculates the precision score of the MLP.
-             * @param {Array} data - The data to evaluate.
-             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
-             * @param {Number} classIndex - The class index to evaluate.
-             * @returns {Number} The precision score of the MLP.
-             */
             static precisionScore(data, mlp, classIndex = 0) {
                 let truePositives = 0;
                 let falsePositives = 0;
@@ -443,13 +471,6 @@
                 return truePositives / (truePositives + falsePositives);
             }
 
-            /**
-             * Calculates the recall score of the MLP.
-             * @param {Array} data - The data to evaluate.
-             * @param {TMultiLayerPerceptron} mlp - The MLP to evaluate.
-             * @param {Number} classIndex - The class index to evaluate.
-             * @returns {Number} The recall score of the MLP.
-             */
             static recallScore(data, mlp, classIndex = 0) {
                 let truePositives = 0;
                 let falseNegatives = 0;
@@ -474,12 +495,6 @@
                 return truePositives / (truePositives + falseNegatives);
             }
 
-            /**
-             * Calculates the F1 score of the MLP.
-             * @param {Number} precision - The precision score of the MLP.
-             * @param {Number} recall - The recall score of the MLP.
-             * @returns {Number} The F1 score of the MLP.
-             */
             static f1Score(precision, recall) {
                 if (precision + recall === 0) {
                     return 0;
@@ -487,11 +502,6 @@
                 return 2 * (precision * recall) / (precision + recall);
             }
 
-            /**
-             * Gets the index of the maximum value in the array.
-             * @param {Array} array - The array to find the maximum value in.
-             * @returns {Number} The index of the maximum value in the array.
-             */
             static getMaxIndex(array) {
                 let maxIndex = 0;
                 for (let i = 1; i < array.length; i++) {
@@ -502,13 +512,6 @@
                 return maxIndex;
             }
 
-            /**
-             * Generates test data for the MLP.
-             * @param {Number} samplesPerClass - The number of samples per class.
-             * @param {Number} inputSize - The size of the input.
-             * @param {Number} numClasses - The number of classes.
-             * @returns {Array} The generated test data.
-             */
             static generateTestData(samplesPerClass, inputSize, numClasses) {
                 const data = [];
 
@@ -518,19 +521,18 @@
                         const target = new Array(numClasses).fill(0);
                         target[classIndex] = 1;
 
-                        // Generate different patterns for each class
                         for (let j = 0; j < inputSize; j++) {
                             switch (classIndex) {
-                                case 0: // Class 0: low values (0-0.5)
+                                case 0:
                                     input.push(Math.random() * 0.5);
                                     break;
-                                case 1: // Class 1: high values (0.5-1.0)
+                                case 1:
                                     input.push(0.5 + Math.random() * 0.5);
                                     break;
-                                case 2: // Class 2: mixed pattern
+                                case 2:
                                     input.push(j % 2 === 0 ? Math.random() * 0.5 : 0.5 + Math.random() * 0.5);
                                     break;
-                                default: // Additional classes: random patterns
+                                default:
                                     input.push(Math.random());
                                     break;
                             }
@@ -540,7 +542,6 @@
                     }
                 }
 
-                // Shuffle the data
                 for (let i = data.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [data[i], data[j]] = [data[j], data[i]];
@@ -548,14 +549,63 @@
 
                 return data;
             }
+
+            static normalizeData(data) {
+                if (data.length === 0) return { data: [], mins: [], maxs: [] };
+
+                const inputSize = data[0].input.length;
+                const mins = new Array(inputSize).fill(Infinity);
+                const maxs = new Array(inputSize).fill(-Infinity);
+
+                for (let i = 0; i < data.length; i++) {
+                    for (let j = 0; j < inputSize; j++) {
+                        if (data[i].input[j] < mins[j]) mins[j] = data[i].input[j];
+                        if (data[i].input[j] > maxs[j]) maxs[j] = data[i].input[j];
+                    }
+                }
+
+                const normalizedData = data.map(point => {
+                    const normalizedInput = point.input.map((val, idx) => {
+                        const range = maxs[idx] - mins[idx];
+                        if (range === 0) return 0.5;
+                        return (val - mins[idx]) / range;
+                    });
+                    return new TDataPoint(normalizedInput, point.target);
+                });
+
+                return { data: normalizedData, mins, maxs };
+            }
+
+            static checkDataQuality(data) {
+                const warnings = [];
+                if (data.length === 0) return warnings;
+
+                const inputSize = data[0].input.length;
+
+                for (let j = 0; j < inputSize; j++) {
+                    let min = Infinity, max = -Infinity, sum = 0;
+                    for (let i = 0; i < data.length; i++) {
+                        const val = data[i].input[j];
+                        if (val < min) min = val;
+                        if (val > max) max = val;
+                        sum += val;
+                    }
+                    const mean = sum / data.length;
+                    const range = max - min;
+
+                    if (range > 100) {
+                        warnings.push(`Feature ${j}: Large range (${min.toFixed(2)} to ${max.toFixed(2)}). Consider normalizing.`);
+                    }
+                    if (min < -10 || max > 10) {
+                        warnings.push(`Feature ${j}: Values outside [-10, 10] range. Consider normalizing.`);
+                    }
+                }
+
+                return warnings;
+            }
         }
 
         class TDataPoint {
-            /**
-             * Creates a new TDataPoint object.
-             * @param {Array} input - The input of the data point.
-             * @param {Array} target - The target of the data point.
-             */
             constructor(input, target) {
                 this.input = input;
                 this.target = target;
@@ -563,21 +613,19 @@
         }
 
         class TNeuron {
-            /**
-             * Creates a new TNeuron object.
-             */
             constructor() {
                 this.weights = [];
                 this.bias = 0;
                 this.output = 0;
                 this.error = 0;
+                this.m = [];
+                this.v = [];
+                this.mBias = 0;
+                this.vBias = 0;
             }
         }
 
         class TLayer {
-            /**
-             * Creates a new TLayer object.
-             */
             constructor() {
                 this.neurons = [];
                 this.activationType = 'sigmoid';
@@ -585,14 +633,6 @@
         }
 
         class TMultiLayerPerceptron {
-            /**
-             * Creates a new TMultiLayerPerceptron object.
-             * @param {Number} inputSize - The size of the input.
-             * @param {Array} hiddenSizes - The sizes of the hidden layers.
-             * @param {Number} outputSize - The size of the output.
-             * @param {String} hiddenActivation - The activation function of the hidden layers.
-             * @param {String} outputActivation - The activation function of the output layer.
-             */
             constructor(inputSize, hiddenSizes, outputSize, hiddenActivation = 'sigmoid', outputActivation = 'sigmoid') {
                 this.learningRate = 0.1;
                 this.inputLayer = new TLayer();
@@ -600,197 +640,176 @@
                 this.outputLayer = new TLayer();
                 this.hiddenActivation = hiddenActivation;
                 this.outputActivation = outputActivation;
+                this.optimizer = 'sgd';
+                this.dropoutRate = 0;
+                this.l2Lambda = 0;
+                this.beta1 = 0.9;
+                this.beta2 = 0.999;
+                this.timestep = 0;
+                this.dropoutMasks = [];
+                this.isTraining = true;
                 this.initialize(inputSize, hiddenSizes, outputSize);
             }
 
-            /**
-             * Initializes the weights of the neurons in the input layer.
-             * @param {Number} inputSize - The size of the input.
-             * @returns {Array} The weights of the neurons in the input layer.
-             */
-            initializeWeights(inputSize) {
-                const limit = Math.sqrt(6 / inputSize);
+            initializeWeights(inputSize, outputSize, activation) {
+                let limit;
+                if (activation === 'relu') {
+                    limit = Math.sqrt(2.0 / inputSize);
+                } else {
+                    limit = Math.sqrt(6.0 / (inputSize + outputSize));
+                }
                 return new Array(inputSize).fill(0).map(() =>
                     (Math.random() * 2 - 1) * limit
                 );
             }
 
-            /**
-             * Initializes the MLP.
-             * @param {Number} inputSize - The size of the input.
-             * @param {Array} hiddenSizes - The sizes of the hidden layers.
-             * @param {Number} outputSize - The size of the output.
-             */
             initialize(inputSize, hiddenSizes, outputSize) {
-                // Input layer
                 this.inputLayer.neurons = [];
                 for (let i = 0; i < inputSize; i++) {
                     this.inputLayer.neurons.push(new TNeuron());
                     this.inputLayer.neurons[i].output = 0;
                 }
 
-                // Hidden layers
                 this.hiddenLayers = [];
                 let prevSize = inputSize;
-                hiddenSizes.forEach((size) => {
+                hiddenSizes.forEach((size, idx) => {
                     let layer = new TLayer();
                     layer.activationType = this.hiddenActivation;
+                    const nextSize = idx < hiddenSizes.length - 1 ? hiddenSizes[idx + 1] : outputSize;
                     for (let i = 0; i < size; i++) {
                         let neuron = new TNeuron();
-                        neuron.weights = this.initializeWeights(prevSize);
-                        neuron.bias = (Math.random() * 2 - 1) * 0.1;
+                        neuron.weights = this.initializeWeights(prevSize, size, this.hiddenActivation);
+                        neuron.bias = 0;
+                        neuron.m = new Array(prevSize).fill(0);
+                        neuron.v = new Array(prevSize).fill(0);
                         layer.neurons.push(neuron);
                     }
                     this.hiddenLayers.push(layer);
                     prevSize = size;
                 });
 
-                // Output layer
                 this.outputLayer = new TLayer();
                 this.outputLayer.activationType = this.outputActivation;
                 for (let i = 0; i < outputSize; i++) {
                     let neuron = new TNeuron();
-                    neuron.weights = this.initializeWeights(prevSize);
-                    neuron.bias = (Math.random() * 2 - 1) * 0.1;
+                    neuron.weights = this.initializeWeights(prevSize, outputSize, this.outputActivation);
+                    neuron.bias = 0;
+                    neuron.m = new Array(prevSize).fill(0);
+                    neuron.v = new Array(prevSize).fill(0);
                     this.outputLayer.neurons.push(neuron);
                 }
             }
 
-            /**
-             * Feeds the input forward through the MLP.
-             * @param {Array} input - The input to the MLP.
-             * @returns {Array} The output of the MLP.
-             */
+            applyDropout(layerOutputs, layerIndex) {
+                if (!this.isTraining || this.dropoutRate <= 0) {
+                    return layerOutputs;
+                }
+
+                const mask = layerOutputs.map(() => Math.random() > this.dropoutRate ? 1 : 0);
+                this.dropoutMasks[layerIndex] = mask;
+
+                const scale = 1 / (1 - this.dropoutRate);
+                return layerOutputs.map((val, idx) => val * mask[idx] * scale);
+            }
+
             feedForward(input) {
                 for (let i = 0; i < this.inputLayer.neurons.length; i++) {
                     this.inputLayer.neurons[i].output = input[i];
                 }
 
-                /**
-                * Initialize the previous outputs with the input.
-                */
                 let prevOutputs = input;
+                this.dropoutMasks = [];
 
-                /**
-                 * Propagate the output through the hidden layers.
-                 */
                 for (let k = 0; k < this.hiddenLayers.length; k++) {
-                    /**
-                     * Initialize the current outputs array.
-                     */
                     let curOutputs = [];
 
-                    /**
-                     * Calculate the output of each neuron in the current layer.
-                     */
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
-                        /**
-                         * Initialize the sum of the weighted inputs to the neuron.
-                         */
                         let sum = this.hiddenLayers[k].neurons[i].bias;
 
-                        /**
-                         * Calculate the weighted sum of the inputs to the neuron.
-                         */
                         for (let j = 0; j < prevOutputs.length; j++) {
                             sum += prevOutputs[j] * this.hiddenLayers[k].neurons[i].weights[j];
                         }
 
-                        /**
-                         * Calculate the output of the neuron using the activation function.
-                         */
                         this.hiddenLayers[k].neurons[i].output = ActivationFunctions.apply(
                             this.hiddenLayers[k].activationType, sum
                         );
 
-                        /**
-                         * Add the output of the neuron to the current outputs array.
-                         */
                         curOutputs.push(this.hiddenLayers[k].neurons[i].output);
                     }
 
-                    /**
-                     * Update the previous outputs with the current outputs.
-                     */
+                    curOutputs = this.applyDropout(curOutputs, k);
+                    for (let i = 0; i < curOutputs.length; i++) {
+                        this.hiddenLayers[k].neurons[i].output = curOutputs[i];
+                    }
+
                     prevOutputs = curOutputs;
                 }
 
-                /**
-                 * Calculate the output of the output layer.
-                 */
                 let outputSums = [];
                 for (let i = 0; i < this.outputLayer.neurons.length; i++) {
-                    /**
-                     * Initialize the sum of the weighted inputs to the neuron.
-                     */
                     let sum = this.outputLayer.neurons[i].bias;
 
-                    /**
-                     * Calculate the weighted sum of the inputs to the neuron.
-                     */
                     for (let j = 0; j < prevOutputs.length; j++) {
                         sum += prevOutputs[j] * this.outputLayer.neurons[i].weights[j];
                     }
 
-                    /**
-                     * Add the output of the neuron to the output sums array.
-                     */
                     outputSums.push(sum);
                 }
 
-                /**
-                 * Calculate the output of the neural network.
-                 */
                 let output;
                 if (this.outputActivation === 'softmax') {
-                    /**
-                     * If the output activation function is softmax, calculate the output using the softmax function.
-                     */
                     output = ActivationFunctions.softmax(outputSums);
-                    /**
-                     * Update the output of the output layer.
-                     */
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                         this.outputLayer.neurons[i].output = output[i];
                     }
                 } else {
-                    /**
-                     * If the output activation function is not softmax, calculate the output using the activation function.
-                     */
                     output = [];
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
-                        /**
-                         * Calculate the output of the neuron using the activation function.
-                         */
                         this.outputLayer.neurons[i].output = ActivationFunctions.apply(
                             this.outputActivation, outputSums[i]
                         );
-
-                        /**
-                         * Add the output of the neuron to the output array.
-                         */
                         output.push(this.outputLayer.neurons[i].output);
                     }
                 }
 
-                /**
-                 * Return the output of the neural network.
-                 */
                 return output;
             }
 
-            /**
-             * Performs backpropagation to calculate error gradients for all neurons in the network.
-             * This implements the backward pass of the backpropagation algorithm, computing how much
-             * each neuron contributed to the final error and storing this in the neuron's error property.
-             * @param {Array} target - The expected output values (target labels) for the current training example.
-             */
+            computeLoss(predicted, target) {
+                let loss = 0;
+                if (this.outputActivation === 'softmax') {
+                    for (let i = 0; i < target.length; i++) {
+                        const p = Math.max(EPSILON, Math.min(1 - EPSILON, predicted[i]));
+                        loss -= target[i] * Math.log(p);
+                    }
+                } else {
+                    for (let i = 0; i < target.length; i++) {
+                        loss += 0.5 * Math.pow(target[i] - predicted[i], 2);
+                    }
+                }
+
+                if (this.l2Lambda > 0) {
+                    let l2Sum = 0;
+                    for (let k = 0; k < this.hiddenLayers.length; k++) {
+                        for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
+                            for (let j = 0; j < this.hiddenLayers[k].neurons[i].weights.length; j++) {
+                                l2Sum += Math.pow(this.hiddenLayers[k].neurons[i].weights[j], 2);
+                            }
+                        }
+                    }
+                    for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                        for (let j = 0; j < this.outputLayer.neurons[i].weights.length; j++) {
+                            l2Sum += Math.pow(this.outputLayer.neurons[i].weights[j], 2);
+                        }
+                    }
+                    loss += 0.5 * this.l2Lambda * l2Sum;
+                }
+
+                return loss;
+            }
 
             backPropagate(target) {
-                // Calculate errors for output layer neurons
                 if (this.outputActivation === 'softmax') {
-                    // For softmax activation, use cross-entropy derivative
-                    // This directly computes (target - predicted) for each output neuron
                     let derivatives = ActivationFunctions.dSoftmax(target,
                         this.outputLayer.neurons.map(n => n.output)
                     );
@@ -798,8 +817,6 @@
                         this.outputLayer.neurons[i].error = derivatives[i];
                     }
                 } else {
-                    // For other activation functions, use standard error calculation
-                    // Error = derivative(activation) * (target - actual)
                     for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                         let o = this.outputLayer.neurons[i].output;
                         let derivative = ActivationFunctions.applyDerivative(this.outputActivation, o);
@@ -807,41 +824,37 @@
                     }
                 }
 
-                // Propagate errors backward through hidden layers (from last to first)
                 for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
                         let neuron = this.hiddenLayers[k].neurons[i];
                         let sum = 0;
 
-                        // Calculate weighted sum of errors from the next layer
                         if (k === this.hiddenLayers.length - 1) {
-                            // This is the last hidden layer, so get errors from output layer
                             for (let j = 0; j < this.outputLayer.neurons.length; j++) {
                                 sum += this.outputLayer.neurons[j].error * this.outputLayer.neurons[j].weights[i];
                             }
                         } else {
-                            // Get errors from the next hidden layer
                             for (let j = 0; j < this.hiddenLayers[k + 1].neurons.length; j++) {
                                 sum += this.hiddenLayers[k + 1].neurons[j].error * this.hiddenLayers[k + 1].neurons[j].weights[i];
                             }
                         }
-                        // Calculate this neuron's error using the chain rule
-                        // Error = derivative(activation) * weighted_sum_of_next_layer_errors
+
                         let derivative = ActivationFunctions.applyDerivative(
                             this.hiddenLayers[k].activationType, neuron.output
                         );
-                        neuron.error = derivative * sum;
+
+                        if (this.dropoutMasks[k] && this.dropoutMasks[k][i] === 0) {
+                            neuron.error = 0;
+                        } else {
+                            neuron.error = derivative * sum;
+                        }
                     }
                 }
             }
-            /**
-            * Updates all weights and biases in the network using the calculated error gradients.
-            * This implements the weight update step of the backpropagation algorithm using gradient descent.
-            * @param {Array} input - The original input values used for this training example.
-            */
+
             updateWeights(input) {
-                // Collect outputs from each layer for weight updates
-                // layerOutputs[0] = input layer, layerOutputs[1] = first hidden layer, etc.
+                this.timestep++;
+
                 let layerOutputs = [input];
                 for (let k = 0; k < this.hiddenLayers.length; k++) {
                     let outputs = [];
@@ -850,60 +863,102 @@
                     }
                     layerOutputs.push(outputs);
                 }
-                
-                // Update output layer weights and biases
+
                 let lastHiddenOutputs = layerOutputs[layerOutputs.length - 1];
                 for (let i = 0; i < this.outputLayer.neurons.length; i++) {
                     let neuron = this.outputLayer.neurons[i];
-                    // Update each weight: weight += learning_rate * error * input_from_previous_layer
-                    for (let j = 0; j < neuron.weights.length; j++) {
-                        neuron.weights[j] += this.learningRate * neuron.error * lastHiddenOutputs[j];
-                    }
-                    // Update bias: bias += learning_rate * error
-                    neuron.bias += this.learningRate * neuron.error;
+                    this.updateNeuronWeights(neuron, lastHiddenOutputs);
                 }
 
-                // Update hidden layer weights and biases (from last to first)
                 for (let k = this.hiddenLayers.length - 1; k >= 0; k--) {
                     let prevLayerOutputs = layerOutputs[k];
                     for (let i = 0; i < this.hiddenLayers[k].neurons.length; i++) {
                         let neuron = this.hiddenLayers[k].neurons[i];
-                        // Update each weight using gradient descent
-                        for (let j = 0; j < neuron.weights.length; j++) {
-                            neuron.weights[j] += this.learningRate * neuron.error * prevLayerOutputs[j];
-                        }
-                        // Update bias
-                        neuron.bias += this.learningRate * neuron.error;
+                        this.updateNeuronWeights(neuron, prevLayerOutputs);
                     }
                 }
             }
 
-            /**
-            * Makes a prediction for the given input without updating weights.
-            * This is used for inference after training is complete.
-            * @param {Array} input - The input values to make a prediction for.
-            * @returns {Array} The predicted output values from the network.
-            */
-            predict(input) {
-                return this.feedForward(input);
+            updateNeuronWeights(neuron, prevLayerOutputs) {
+                if (this.optimizer === 'adam') {
+                    this.updateWeightsAdam(neuron, prevLayerOutputs);
+                } else if (this.optimizer === 'rmsprop') {
+                    this.updateWeightsRMSProp(neuron, prevLayerOutputs);
+                } else {
+                    this.updateWeightsSGD(neuron, prevLayerOutputs);
+                }
             }
 
-            /**
-            * Performs one complete training step: forward pass, backward pass, and weight update.
-            * This is the main training method that combines all phases of the learning process.
-            * @param {Array} input - The input values for this training example.
-            * @param {Array} target - The expected output values for this training example.
-            */
+            updateWeightsSGD(neuron, prevLayerOutputs) {
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = neuron.error * prevLayerOutputs[j];
+                    if (this.l2Lambda > 0) {
+                        gradient -= this.l2Lambda * neuron.weights[j];
+                    }
+                    neuron.weights[j] += this.learningRate * gradient;
+                }
+                neuron.bias += this.learningRate * neuron.error;
+            }
+
+            updateWeightsAdam(neuron, prevLayerOutputs) {
+                const eps = 1e-8;
+
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = -neuron.error * prevLayerOutputs[j];
+                    if (this.l2Lambda > 0) {
+                        gradient += this.l2Lambda * neuron.weights[j];
+                    }
+
+                    neuron.m[j] = this.beta1 * neuron.m[j] + (1 - this.beta1) * gradient;
+                    neuron.v[j] = this.beta2 * neuron.v[j] + (1 - this.beta2) * gradient * gradient;
+
+                    const mHat = neuron.m[j] / (1 - Math.pow(this.beta1, this.timestep));
+                    const vHat = neuron.v[j] / (1 - Math.pow(this.beta2, this.timestep));
+
+                    neuron.weights[j] -= this.learningRate * mHat / (Math.sqrt(vHat) + eps);
+                }
+
+                let biasGradient = -neuron.error;
+                neuron.mBias = this.beta1 * neuron.mBias + (1 - this.beta1) * biasGradient;
+                neuron.vBias = this.beta2 * neuron.vBias + (1 - this.beta2) * biasGradient * biasGradient;
+                const mHatBias = neuron.mBias / (1 - Math.pow(this.beta1, this.timestep));
+                const vHatBias = neuron.vBias / (1 - Math.pow(this.beta2, this.timestep));
+                neuron.bias -= this.learningRate * mHatBias / (Math.sqrt(vHatBias) + 1e-8);
+            }
+
+            updateWeightsRMSProp(neuron, prevLayerOutputs) {
+                const eps = 1e-8;
+                const decay = 0.9;
+
+                for (let j = 0; j < neuron.weights.length; j++) {
+                    let gradient = -neuron.error * prevLayerOutputs[j];
+                    if (this.l2Lambda > 0) {
+                        gradient += this.l2Lambda * neuron.weights[j];
+                    }
+
+                    neuron.v[j] = decay * neuron.v[j] + (1 - decay) * gradient * gradient;
+                    neuron.weights[j] -= this.learningRate * gradient / (Math.sqrt(neuron.v[j]) + eps);
+                }
+
+                let biasGradient = -neuron.error;
+                neuron.vBias = decay * neuron.vBias + (1 - decay) * biasGradient * biasGradient;
+                neuron.bias -= this.learningRate * biasGradient / (Math.sqrt(neuron.vBias) + eps);
+            }
+
+            predict(input) {
+                this.isTraining = false;
+                const result = this.feedForward(input);
+                this.isTraining = true;
+                return result;
+            }
+
             train(input, target) {
+                this.isTraining = true;
                 this.feedForward(input);
                 this.backPropagate(target);
                 this.updateWeights(input);
             }
-            /**
-            * Serializes the entire neural network to a JSON string for saving.
-            * This includes all network architecture, weights, biases, and configuration parameters.
-            * @returns {String} JSON string representation of the complete network state.
-            */
+
             toJSON() {
                 return JSON.stringify({
                     learningRate: this.learningRate,
@@ -912,11 +967,19 @@
                     outputSize: this.outputLayer.neurons.length,
                     hiddenActivation: this.hiddenActivation,
                     outputActivation: this.outputActivation,
+                    optimizer: this.optimizer,
+                    dropoutRate: this.dropoutRate,
+                    l2Lambda: this.l2Lambda,
+                    timestep: this.timestep,
                     hiddenLayers: this.hiddenLayers.map(layer => ({
                         activationType: layer.activationType,
                         neurons: layer.neurons.map(n => ({
                             weights: n.weights,
                             bias: n.bias,
+                            m: n.m,
+                            v: n.v,
+                            mBias: n.mBias,
+                            vBias: n.vBias,
                         }))
                     })),
                     outputLayer: {
@@ -924,16 +987,15 @@
                         neurons: this.outputLayer.neurons.map(n => ({
                             weights: n.weights,
                             bias: n.bias,
+                            m: n.m,
+                            v: n.v,
+                            mBias: n.mBias,
+                            vBias: n.vBias,
                         }))
                     }
                 });
             }
-            /**
-            * Creates a new TMultiLayerPerceptron instance from a JSON string.
-            * This allows loading a previously saved network with all its trained weights and configuration.
-            * @param {String} json - JSON string containing the serialized network data.
-            * @returns {TMultiLayerPerceptron} A new MLP instance with the loaded configuration and weights.
-            */
+
             static fromJSON(json) {
                 let obj = JSON.parse(json);
                 let mlp = new TMultiLayerPerceptron(
@@ -943,11 +1005,13 @@
                     obj.hiddenActivation || 'sigmoid',
                     obj.outputActivation || 'sigmoid'
                 );
-                
-                // Restore the learning rate
-                mlp.learningRate = obj.learningRate;
 
-                // Restore weights and biases for all hidden layers
+                mlp.learningRate = obj.learningRate;
+                mlp.optimizer = obj.optimizer || 'sgd';
+                mlp.dropoutRate = obj.dropoutRate || 0;
+                mlp.l2Lambda = obj.l2Lambda || 0;
+                mlp.timestep = obj.timestep || 0;
+
                 for (let k = 0; k < mlp.hiddenLayers.length; k++) {
                     if (obj.hiddenLayers[k].activationType) {
                         mlp.hiddenLayers[k].activationType = obj.hiddenLayers[k].activationType;
@@ -955,67 +1019,79 @@
                     for (let i = 0; i < mlp.hiddenLayers[k].neurons.length; i++) {
                         mlp.hiddenLayers[k].neurons[i].weights = obj.hiddenLayers[k].neurons[i].weights;
                         mlp.hiddenLayers[k].neurons[i].bias = obj.hiddenLayers[k].neurons[i].bias;
+                        mlp.hiddenLayers[k].neurons[i].m = obj.hiddenLayers[k].neurons[i].m || new Array(obj.hiddenLayers[k].neurons[i].weights.length).fill(0);
+                        mlp.hiddenLayers[k].neurons[i].v = obj.hiddenLayers[k].neurons[i].v || new Array(obj.hiddenLayers[k].neurons[i].weights.length).fill(0);
+                        mlp.hiddenLayers[k].neurons[i].mBias = obj.hiddenLayers[k].neurons[i].mBias || 0;
+                        mlp.hiddenLayers[k].neurons[i].vBias = obj.hiddenLayers[k].neurons[i].vBias || 0;
                     }
                 }
 
-                // Restore weights and biases for output layer
                 if (obj.outputLayer.activationType) {
                     mlp.outputLayer.activationType = obj.outputLayer.activationType;
                 }
                 for (let i = 0; i < mlp.outputLayer.neurons.length; i++) {
                     mlp.outputLayer.neurons[i].weights = obj.outputLayer.neurons[i].weights;
                     mlp.outputLayer.neurons[i].bias = obj.outputLayer.neurons[i].bias;
+                    mlp.outputLayer.neurons[i].m = obj.outputLayer.neurons[i].m || new Array(obj.outputLayer.neurons[i].weights.length).fill(0);
+                    mlp.outputLayer.neurons[i].v = obj.outputLayer.neurons[i].v || new Array(obj.outputLayer.neurons[i].weights.length).fill(0);
+                    mlp.outputLayer.neurons[i].mBias = obj.outputLayer.neurons[i].mBias || 0;
+                    mlp.outputLayer.neurons[i].vBias = obj.outputLayer.neurons[i].vBias || 0;
                 }
 
                 return mlp;
             }
         }
 
-        // Globals
         let mlp = null;
-
-        /**
-        * Global array to store training data points.
-        * Each element is a TDataPoint containing input and target arrays.
-        * @type {Array<TDataPoint>}
-        */
         let data = [];
+        let normalizationParams = null;
 
-        // Helper CSV
-        /**
-        * Parses CSV text data into an array of TDataPoint objects.
-        * Expected format: each line contains input values followed by target values, comma-separated.
-        * The number of input and output values is determined by the current UI settings.
-        * @param {String} text - Raw CSV text with comma-separated values.
-        * @returns {Array<TDataPoint>} Array of parsed data points ready for training.
-        */
         function parseCSV(text) {
             let lines = text.trim().split("\n");
             let points = [];
-            for (let line of lines) {
-                if (line.trim() === "") continue;
-                
-                // Extract input and target portions from the CSV line
-                let arr = line.trim().split(",").map(Number);
-                let inputSize = parseInt(document.getElementById("inputSize").value);
-                let outputSize = parseInt(document.getElementById("outputSize").value);
-                let input = arr.slice(0, inputSize);
-                let target = arr.slice(inputSize, inputSize + outputSize);
+            let errors = [];
+            let inputSize = parseInt(document.getElementById("inputSize").value);
+            let outputSize = parseInt(document.getElementById("outputSize").value);
+            let expectedCols = inputSize + outputSize;
 
-                // Only add valid data points with correct dimensions
-                if (input.length === inputSize && target.length === outputSize) {
-                    points.push(new TDataPoint(input, target));
+            for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+                let line = lines[lineNum];
+                if (line.trim() === "") continue;
+
+                let arr = line.trim().split(",");
+
+                if (arr.length !== expectedCols) {
+                    errors.push(`Line ${lineNum + 1}: Expected ${expectedCols} columns, got ${arr.length}`);
+                    continue;
                 }
+
+                let hasNonNumeric = false;
+                let values = arr.map((val, idx) => {
+                    let num = Number(val.trim());
+                    if (isNaN(num)) {
+                        hasNonNumeric = true;
+                        errors.push(`Line ${lineNum + 1}, Col ${idx + 1}: Non-numeric value "${val.trim()}"`);
+                        return 0;
+                    }
+                    return num;
+                });
+
+                if (hasNonNumeric) continue;
+
+                let input = values.slice(0, inputSize);
+                let target = values.slice(inputSize, inputSize + outputSize);
+
+                points.push(new TDataPoint(input, target));
             }
+
+            if (errors.length > 0) {
+                const warningsDiv = document.getElementById("dataWarnings");
+                warningsDiv.innerHTML = `<div class="error-msg">CSV parsing errors (showing first 5):<br>${errors.slice(0, 5).join('<br>')}</div>`;
+            }
+
             return points;
         }
 
-        // UI Functions
-        /**
-        * Creates a new neural network based on current UI configuration settings.
-        * Reads all network parameters from the HTML form and initializes a new MLP instance.
-        * Updates the UI to show network creation status.
-        */
         function createNetwork() {
             let inputSize = parseInt(document.getElementById("inputSize").value);
             let hiddenSizes = document.getElementById("hiddenSizes").value
@@ -1024,22 +1100,21 @@
             let learningRate = parseFloat(document.getElementById("learningRate").value);
             let hiddenActivation = document.getElementById("hiddenActivation").value;
             let outputActivation = document.getElementById("outputActivation").value;
+            let optimizer = document.getElementById("optimizer").value;
+            let dropoutRate = parseFloat(document.getElementById("dropoutRate").value);
+            let l2Lambda = parseFloat(document.getElementById("l2Lambda").value);
 
-            // Create new MLP with specified configuration
             mlp = new TMultiLayerPerceptron(inputSize, hiddenSizes, outputSize, hiddenActivation, outputActivation);
             mlp.learningRate = learningRate;
+            mlp.optimizer = optimizer;
+            mlp.dropoutRate = dropoutRate;
+            mlp.l2Lambda = l2Lambda;
 
-            // Update UI status
             document.getElementById("networkStatus").innerText =
-                `Network created! Hidden: ${hiddenActivation}, Output: ${outputActivation}`;
+                `Network created! Hidden: ${hiddenActivation}, Output: ${outputActivation}, Optimizer: ${optimizer}`;
         }
 
-        
-        /**
-        * Generates synthetic test data for training and evaluation.
-        * Creates different patterns for each class to enable meaningful classification testing.
-        * Updates the global data array and UI status display.
-        */
+
         function generateTestData() {
             let samplesPerClass = parseInt(document.getElementById("samplesPerClass").value);
             let inputSize = parseInt(document.getElementById("inputSize").value);
@@ -1085,7 +1160,6 @@
                 let numFolds = parseInt(document.getElementById("numFolds").value);
                 let batchSize = document.getElementById("batchSize").value;
 
-                // Train the model first with specified epochs and batch size
                 MLEvaluation.trainWithBatches(mlp, data, trainingEpochs, batchSize);
 
                 let outputSize = parseInt(document.getElementById("outputSize").value);
@@ -1134,7 +1208,6 @@
                     `;
                 });
 
-                // Calculate averages
                 let avgPrecision = results.reduce((sum, r) => sum + r.precision, 0) / results.length;
                 let avgRecall = results.reduce((sum, r) => sum + r.recall, 0) / results.length;
                 let avgF1 = results.reduce((sum, r) => sum + r.f1, 0) / results.length;
@@ -1179,19 +1252,48 @@
             let batchSize = document.getElementById("batchSize").value;
             let statusDiv = document.getElementById("trainStatus");
             let progressDiv = document.getElementById("trainingProgress");
+            let chartDiv = document.getElementById("validationLossChart");
 
             statusDiv.innerText = `Training for ${trainingEpochs} epochs with batch size ${batchSize}...`;
             progressDiv.innerHTML = '<div>Epoch: 0 / ' + trainingEpochs + '</div>';
 
             setTimeout(() => {
-                MLEvaluation.trainWithBatches(mlp, data, trainingEpochs, batchSize, (currentEpoch, totalEpochs) => {
+                MLEvaluation.trainWithBatches(mlp, data, trainingEpochs, batchSize, (currentEpoch, totalEpochs, validationLosses, earlyStopped) => {
+                    let lossInfo = '';
+                    if (validationLosses.length > 0) {
+                        const lastLoss = validationLosses[validationLosses.length - 1];
+                        lossInfo = `<div>Validation Loss: ${lastLoss.toFixed(6)}</div>`;
+                    }
+
                     progressDiv.innerHTML = `
-                        <div>Epoch: ${currentEpoch} / ${totalEpochs}</div>
+                        <div>Epoch: ${currentEpoch} / ${totalEpochs}${earlyStopped ? ' (Early Stopped)' : ''}</div>
                         <div style="width: 300px; background-color: #f0f0f0; border-radius: 5px; margin-top: 5px;">
                             <div style="width: ${(currentEpoch / totalEpochs) * 100}%; background-color: #4CAF50; height: 20px; border-radius: 5px;"></div>
                         </div>
                         <div>${((currentEpoch / totalEpochs) * 100).toFixed(1)}% Complete</div>
+                        ${lossInfo}
                     `;
+
+                    if (validationLosses.length > 1) {
+                        const maxLoss = Math.max(...validationLosses);
+                        const chartHeight = 100;
+                        const chartWidth = 300;
+                        const barWidth = chartWidth / validationLosses.length;
+
+                        let bars = validationLosses.map((loss, idx) => {
+                            const height = (loss / maxLoss) * chartHeight;
+                            return `<div style="display:inline-block;width:${barWidth}px;height:${height}px;background:#4CAF50;vertical-align:bottom;"></div>`;
+                        }).join('');
+
+                        chartDiv.innerHTML = `
+                            <div style="margin-top:10px;">
+                                <strong>Validation Loss History:</strong>
+                                <div style="height:${chartHeight}px;width:${chartWidth}px;border:1px solid #ccc;display:flex;align-items:flex-end;">
+                                    ${bars}
+                                </div>
+                            </div>
+                        `;
+                    }
                 });
 
                 statusDiv.innerText = `Training completed: ${trainingEpochs} epochs over ${data.length} data points.`;
@@ -1203,16 +1305,56 @@
             if (fileInput.files.length === 0) return;
             let reader = new FileReader();
             reader.onload = function (e) {
+                document.getElementById("dataWarnings").innerHTML = '';
                 data = parseCSV(e.target.result);
-                document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+
+                const warnings = MLEvaluation.checkDataQuality(data);
+                if (warnings.length > 0) {
+                    document.getElementById("dataWarnings").innerHTML = `
+                        <div class="warning">
+                            <strong>Data quality warnings:</strong><br>
+                            ${warnings.slice(0, 5).join('<br>')}
+                            ${warnings.length > 5 ? `<br>... and ${warnings.length - 5} more` : ''}
+                        </div>
+                    `;
+                }
+
+                if (document.getElementById("normalizeData").checked && data.length > 0) {
+                    const result = MLEvaluation.normalizeData(data);
+                    data = result.data;
+                    normalizationParams = { mins: result.mins, maxs: result.maxs };
+                    document.getElementById("dataStatus").innerText = `Loaded and normalized ${data.length} data points.`;
+                } else {
+                    document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+                }
             };
             reader.readAsText(fileInput.files[0]);
         }
 
         function loadCSVText() {
             let text = document.getElementById("csvPaste").value;
+            document.getElementById("dataWarnings").innerHTML = '';
             data = parseCSV(text);
-            document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+
+            const warnings = MLEvaluation.checkDataQuality(data);
+            if (warnings.length > 0) {
+                document.getElementById("dataWarnings").innerHTML = `
+                    <div class="warning">
+                        <strong>Data quality warnings:</strong><br>
+                        ${warnings.slice(0, 5).join('<br>')}
+                        ${warnings.length > 5 ? `<br>... and ${warnings.length - 5} more` : ''}
+                    </div>
+                `;
+            }
+
+            if (document.getElementById("normalizeData").checked && data.length > 0) {
+                const result = MLEvaluation.normalizeData(data);
+                data = result.data;
+                normalizationParams = { mins: result.mins, maxs: result.maxs };
+                document.getElementById("dataStatus").innerText = `Loaded and normalized ${data.length} data points.`;
+            } else {
+                document.getElementById("dataStatus").innerText = `Loaded ${data.length} data points.`;
+            }
         }
 
         function saveModel() {
@@ -1244,6 +1386,15 @@
                 alert(`Input length must be ${mlp.inputLayer.neurons.length}`);
                 return;
             }
+
+            if (normalizationParams) {
+                input = input.map((val, idx) => {
+                    const range = normalizationParams.maxs[idx] - normalizationParams.mins[idx];
+                    if (range === 0) return 0.5;
+                    return (val - normalizationParams.mins[idx]) / range;
+                });
+            }
+
             let output = mlp.predict(input);
             let predictedClass = MLEvaluation.getMaxIndex(output);
             document.getElementById("predictOutput").innerHTML =
