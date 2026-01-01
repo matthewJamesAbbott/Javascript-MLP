@@ -1,7 +1,25 @@
 <!--
-   Matthew Abbott
-   Multi-Layer Perceptron (MLP)
+MIT License
 
+Copyright (c) 2025 Matthew Abbott
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions: 
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 -->
 
 <!DOCTYPE html>
@@ -58,18 +76,19 @@
         }
         
         button { 
-            padding: 0.5rem 1rem; 
-            background: #3b82f6; 
+            padding: 8px 16px; 
+            background: #5a5a5a; 
             color: white; 
             border: none; 
-            border-radius: 6px; 
+            border-radius: 0; 
             cursor: pointer;
             font-size: 0.9rem;
             margin: 0.25rem 0.25rem 0.25rem 0;
             transition: background 0.2s;
         }
-        button:hover { background: #2563eb; }
-        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        button:hover { background: #4a4a4a; }
+        button:active { background: #3a3a3a; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         button.secondary { background: #64748b; }
         button.secondary:hover { background: #475569; }
         button.danger { background: #ef4444; }
@@ -173,6 +192,12 @@
         <h1>Multi-Layer Perceptron</h1>
         <p style="color:#64748b; margin-bottom:1.5rem;">Full backpropagation with live visualization and JSON model persistence</p>
         
+        <!-- Network Architecture Visualization -->
+        <div class="panel section">
+            <h2>Network Architecture</h2>
+            <div id="networkVisualization"></div>
+        </div>
+        
         <div class="grid">
             <!-- Left Column: Configuration & Inputs -->
             <div>
@@ -181,9 +206,10 @@
                     <h2>Network Configuration</h2>
                     <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
                         <label>Input Size: <input type="number" id="inputSize" value="2" min="1" max="100"></label>
-                        <label>Hidden Sizes: <input type="text" id="hiddenSizes" value="4" placeholder="e.g., 4 or 4,3,2"></label>
+                        <label>Hidden Sizes (comma-separated): <input type="text" id="hiddenSizes" value="4,3" placeholder="e.g., 4 or 4,3,2 or 8,8,8"></label>
                         <label>Output Size: <input type="number" id="outputSize" value="1" min="1" max="32"></label>
                     </div>
+                    <p style="font-size: 0.8rem; color: #64748b; margin: 0.5rem 0 0 0;">Multiple hidden layers: enter comma-separated values (e.g., <code>4,3,2</code> = 3 hidden layers)</p>
                     <div style="margin-top:0.75rem;">
                         <button onclick="createNetwork()">Create Network</button>
                         <button class="secondary" onclick="randomizeInputs()">Random Inputs</button>
@@ -272,6 +298,41 @@
             
             <!-- Right Column: Output & Visualization -->
             <div>
+                <!-- Training Configuration -->
+                <div class="panel section">
+                    <h2>Training Configuration</h2>
+                    <div style="display:flex; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <label>Batch Size:
+                                <select id="batchSize">
+                                    <option value="1">1 (Online)</option>
+                                    <option value="32" selected>32</option>
+                                    <option value="64">64</option>
+                                    <option value="128">128</option>
+                                    <option value="all">Full Batch</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                    <div style="margin-top:0.75rem;">
+                        <label><input type="checkbox" id="enableLRDecay"> Enable Learning Rate Decay</label>
+                        <span style="margin-left:1rem;">Rate: <input type="number" id="lrDecayRate" value="0.95" step="0.01" min="0.5" max="1" style="width:60px"></span>
+                        <span style="margin-left:0.5rem;">per <input type="number" id="lrDecayEpochs" value="10" step="1" min="1" style="width:50px"> epochs</span>
+                    </div>
+                    <div style="margin-top:0.5rem;">
+                        <label><input type="checkbox" id="enableEarlyStopping"> Enable Early Stopping after</label>
+                        <span style="margin-left:0.5rem;"><input type="number" id="earlyStoppingPatience" value="10" step="1" min="1" style="width:50px"> epochs without improvement</span>
+                    </div>
+                </div>
+
+                <!-- Generate Test Data -->
+                <div class="panel section">
+                    <h2>Generate Test Data</h2>
+                    <label>Samples per Class: <input type="number" id="samplesPerClass" value="100" min="10"></label>
+                    <button onclick="generateTestData()" style="margin-left:0.5rem;">Generate Data</button>
+                    <span id="generateStatus" style="margin-left:1rem;"></span>
+                </div>
+
                 <!-- Training & Prediction -->
                 <div class="panel section">
                     <h2>Training & Prediction</h2>
@@ -280,11 +341,31 @@
                     </div>
                     <div style="margin-top:0.5rem;">
                         <button id="trainBtn" onclick="trainModel()" disabled>Train</button>
+                        <button id="trainProgressBtn" onclick="trainNetworkWithProgress()" disabled>Train with Progress</button>
                         <button id="predictBtn" onclick="predictModel()" disabled>Predict</button>
+                    </div>
+                    <div style="margin-top:0.5rem;">
                         <button class="secondary" onclick="saveModelDialog()">Save Model</button>
                         <button class="secondary" onclick="loadModelDialog()">Load Model</button>
                     </div>
+                    <div id="trainStatus" style="margin-top:0.5rem;"></div>
+                    <div id="trainingProgress"></div>
                     <div id="output" class="output-panel" style="margin-top:1rem;"></div>
+                </div>
+
+                <!-- Model Evaluation -->
+                <div class="panel section">
+                    <h2>Model Evaluation</h2>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <div>
+                            <label>K-Fold (k=<input type="number" id="numFolds" value="5" min="2" max="10" style="width:50px">)</label>
+                        </div>
+                    </div>
+                    <div style="margin-top:0.5rem;">
+                        <button onclick="runKFoldValidation()" disabled id="kFoldBtn">Run K-Fold Validation</button>
+                        <button onclick="runAllMetrics()" disabled id="metricsBtn">Run All Metrics</button>
+                    </div>
+                    <div id="evaluationResults" style="margin-top:0.5rem;"></div>
                 </div>
                 
                 <!-- Loss Chart -->
@@ -513,6 +594,163 @@ class MultiLayerPerceptron {
     }
 }
 
+// ==================== ML EVALUATION & METRICS ====================
+
+class MLEvaluation {
+    static trainWithBatches(mlp, data, epochs, batchSize, progressCallback = null) {
+        if (data.length === 0) return;
+        
+        let actualBatchSize = batchSize === 'all' ? data.length : parseInt(batchSize);
+        let validationLosses = [];
+        let bestLoss = Infinity;
+        let patienceCounter = 0;
+        const patience = parseInt(document.getElementById('earlyStoppingPatience').value);
+        const enableEarlyStopping = document.getElementById('enableEarlyStopping').checked;
+        const enableLRDecay = document.getElementById('enableLRDecay').checked;
+        const lrDecayRate = parseFloat(document.getElementById('lrDecayRate').value);
+        const lrDecayEpochs = parseInt(document.getElementById('lrDecayEpochs').value);
+        
+        let originalLR = mlp.learningRate;
+        
+        for (let epoch = 0; epoch < epochs; epoch++) {
+            let totalLoss = 0;
+            
+            for (let i = 0; i < data.length; i += actualBatchSize) {
+                const batchEnd = Math.min(i + actualBatchSize, data.length);
+                
+                for (let j = i; j < batchEnd; j++) {
+                    const sample = data[j];
+                    const inputs = sample.slice(0, mlp.inputSize);
+                    const target = sample.slice(mlp.inputSize);
+                    const loss = mlp.train(inputs, target);
+                    totalLoss += loss;
+                }
+            }
+            
+            const avgLoss = totalLoss / data.length;
+            validationLosses.push(avgLoss);
+            
+            if (enableLRDecay && (epoch + 1) % lrDecayEpochs === 0) {
+                mlp.learningRate *= lrDecayRate;
+            }
+            
+            if (enableEarlyStopping) {
+                if (avgLoss < bestLoss) {
+                    bestLoss = avgLoss;
+                    patienceCounter = 0;
+                } else {
+                    patienceCounter++;
+                }
+            }
+            
+            if (progressCallback) {
+                progressCallback(epoch + 1, epochs, validationLosses, patienceCounter >= patience);
+            }
+            
+            if (enableEarlyStopping && patienceCounter >= patience) {
+                if (progressCallback) progressCallback(epoch + 1, epochs, validationLosses, true);
+                break;
+            }
+        }
+        
+        mlp.learningRate = originalLR;
+    }
+    
+    static precisionScore(data, mlp, classIndex) {
+        if (data.length === 0) return 0;
+        
+        let truePositives = 0;
+        let falsePositives = 0;
+        
+        for (let sample of data) {
+            const inputs = sample.slice(0, mlp.inputSize);
+            const target = sample.slice(mlp.inputSize);
+            const output = mlp.predict(inputs);
+            const predictedClass = output.indexOf(Math.max(...output));
+            const trueClass = target.indexOf(Math.max(...target));
+            
+            if (predictedClass === classIndex) {
+                if (trueClass === classIndex) truePositives++;
+                else falsePositives++;
+            }
+        }
+        
+        return truePositives + falsePositives === 0 ? 0 : truePositives / (truePositives + falsePositives);
+    }
+    
+    static recallScore(data, mlp, classIndex) {
+        if (data.length === 0) return 0;
+        
+        let truePositives = 0;
+        let falseNegatives = 0;
+        
+        for (let sample of data) {
+            const inputs = sample.slice(0, mlp.inputSize);
+            const target = sample.slice(mlp.inputSize);
+            const output = mlp.predict(inputs);
+            const predictedClass = output.indexOf(Math.max(...output));
+            const trueClass = target.indexOf(Math.max(...target));
+            
+            if (trueClass === classIndex) {
+                if (predictedClass === classIndex) truePositives++;
+                else falseNegatives++;
+            }
+        }
+        
+        return truePositives + falseNegatives === 0 ? 0 : truePositives / (truePositives + falseNegatives);
+    }
+    
+    static f1Score(precision, recall) {
+        if (precision + recall === 0) return 0;
+        return 2 * (precision * recall) / (precision + recall);
+    }
+    
+    static accuracy(data, mlp) {
+        if (data.length === 0) return 0;
+        
+        let correct = 0;
+        for (let sample of data) {
+            const inputs = sample.slice(0, mlp.inputSize);
+            const target = sample.slice(mlp.inputSize);
+            const output = mlp.predict(inputs);
+            const predictedClass = output.indexOf(Math.max(...output));
+            const trueClass = target.indexOf(Math.max(...target));
+            if (predictedClass === trueClass) correct++;
+        }
+        
+        return correct / data.length;
+    }
+    
+    static kFoldCrossValidation(data, k, mlpTemplate, epochs) {
+        const foldSize = Math.floor(data.length / k);
+        let totalAccuracy = 0;
+        
+        for (let fold = 0; fold < k; fold++) {
+            const testStart = fold * foldSize;
+            const testEnd = fold === k - 1 ? data.length : (fold + 1) * foldSize;
+            
+            const testData = data.slice(testStart, testEnd);
+            const trainData = data.slice(0, testStart).concat(data.slice(testEnd));
+            
+            const mlp = new MultiLayerPerceptron(
+                mlpTemplate.inputSize,
+                mlpTemplate.hiddenSizes,
+                mlpTemplate.outputSize,
+                mlpTemplate.hiddenActivation,
+                mlpTemplate.outputActivation
+            );
+            mlp.learningRate = mlpTemplate.learningRate;
+            
+            this.trainWithBatches(mlp, trainData, epochs, document.getElementById('batchSize').value);
+            
+            const foldAccuracy = this.accuracy(testData, mlp);
+            totalAccuracy += foldAccuracy;
+        }
+        
+        return totalAccuracy / k;
+    }
+}
+
 // ==================== DATA HANDLING ====================
 
 let trainingData = [];
@@ -651,6 +889,7 @@ function createNetwork() {
     buildInputFields();
     lossHistory = [];
     updateLossChart();
+    visualizeMLPArchitecture(currentMLP);
     document.getElementById('output').innerHTML = '<div class="success-msg">Network created successfully</div>';
     document.getElementById('trainBtn').disabled = false;
     document.getElementById('predictBtn').disabled = false;
@@ -825,6 +1064,7 @@ function loadModelDialog() {
                 buildInputFields();
                 lossHistory = data.lossHistory || [];
                 updateLossChart();
+                visualizeMLPArchitecture(currentMLP);
                 
                 document.getElementById('output').innerHTML = '<div class="success-msg">Model loaded successfully</div>';
                 document.getElementById('trainBtn').disabled = false;
@@ -848,6 +1088,216 @@ function resetModel() {
     updateLossChart();
 }
 
+// ==================== NETWORK VISUALIZATION ====================
+
+function visualizeMLPArchitecture(mlp) {
+    if (!mlp) return;
+    
+    const container = document.getElementById('networkVisualization');
+    if (!container) return;
+    
+    const spacing = 85;
+    const padding = 20;
+    const legendSpace = 80;
+    const totalLayers = 2 + mlp.hiddenSizes.length;
+    
+    const totalWidth = totalLayers * spacing + padding * 2 + legendSpace;
+    const totalHeight = 200;
+    
+    const svgContainer = document.createElement('div');
+    svgContainer.setAttribute('style', 'overflow-x: auto; overflow-y: hidden; border: 1px solid #ccc; background: #fafafa; border-radius: 4px; margin: 1rem 0; height: 220px;');
+    
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', totalWidth);
+    svg.setAttribute('height', totalHeight);
+    svg.setAttribute('style', 'display: block;');
+    
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.innerHTML = `
+        <linearGradient id="inputGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#e8f5e9;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#c8e6c9;stop-opacity:1" />
+        </linearGradient>
+        <linearGradient id="hiddenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#ea4335;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#c5221f;stop-opacity:1" />
+        </linearGradient>
+        <linearGradient id="outGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#fbbc04;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#f57d00;stop-opacity:1" />
+        </linearGradient>
+    `;
+    svg.appendChild(defs);
+    
+    let xPos = padding + legendSpace;
+    
+    // Draw input layer
+    drawMLPInputLayer(svg, xPos, totalHeight / 2, mlp.inputSize);
+    xPos += spacing;
+    
+    // Draw hidden layers
+    for (let i = 0; i < mlp.hiddenSizes.length; i++) {
+        drawMLPHiddenLayer(svg, xPos, totalHeight / 2, mlp.hiddenSizes[i], i + 1);
+        xPos += spacing;
+    }
+    
+    // Draw output layer
+    drawMLPOutputLayer(svg, xPos, totalHeight / 2, mlp.outputSize);
+    
+    // Draw legend
+    drawMLPLegend(svg, padding + 5, totalHeight / 2 - 30);
+    
+    svgContainer.innerHTML = '';
+    svgContainer.appendChild(svg);
+    
+    container.innerHTML = '';
+    container.appendChild(svgContainer);
+}
+
+function drawMLPInputLayer(svg, x, cy, neurons) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    
+    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    box.setAttribute('x', x - 25);
+    box.setAttribute('y', cy - 35);
+    box.setAttribute('width', 50);
+    box.setAttribute('height', 70);
+    box.setAttribute('fill', '#e8f5e9');
+    box.setAttribute('stroke', '#2e7d32');
+    box.setAttribute('stroke-width', 1.5);
+    box.setAttribute('rx', 3);
+    g.appendChild(box);
+    
+    const text1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text1.setAttribute('x', x);
+    text1.setAttribute('y', cy - 18);
+    text1.setAttribute('text-anchor', 'middle');
+    text1.setAttribute('font-size', '10');
+    text1.setAttribute('font-weight', 'bold');
+    text1.setAttribute('fill', '#1b5e20');
+    text1.textContent = 'Input';
+    g.appendChild(text1);
+    
+    const text2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text2.setAttribute('x', x);
+    text2.setAttribute('y', cy + 2);
+    text2.setAttribute('text-anchor', 'middle');
+    text2.setAttribute('font-size', '9');
+    text2.setAttribute('fill', '#1b5e20');
+    text2.textContent = `${neurons}`;
+    g.appendChild(text2);
+    
+    svg.appendChild(g);
+}
+
+function drawMLPHiddenLayer(svg, x, cy, neurons, layerNum) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    
+    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    box.setAttribute('x', x - 25);
+    box.setAttribute('y', cy - 35);
+    box.setAttribute('width', 50);
+    box.setAttribute('height', 70);
+    box.setAttribute('fill', 'url(#hiddenGrad)');
+    box.setAttribute('stroke', '#c5221f');
+    box.setAttribute('stroke-width', 1.5);
+    box.setAttribute('rx', 3);
+    g.appendChild(box);
+    
+    const text1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text1.setAttribute('x', x);
+    text1.setAttribute('y', cy - 18);
+    text1.setAttribute('text-anchor', 'middle');
+    text1.setAttribute('font-size', '9');
+    text1.setAttribute('font-weight', 'bold');
+    text1.setAttribute('fill', 'white');
+    text1.textContent = `H${layerNum}`;
+    g.appendChild(text1);
+    
+    const text2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text2.setAttribute('x', x);
+    text2.setAttribute('y', cy + 8);
+    text2.setAttribute('text-anchor', 'middle');
+    text2.setAttribute('font-size', '8');
+    text2.setAttribute('fill', 'white');
+    text2.textContent = `${neurons}`;
+    g.appendChild(text2);
+    
+    svg.appendChild(g);
+}
+
+function drawMLPOutputLayer(svg, x, cy, neurons) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    
+    const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    box.setAttribute('x', x - 28);
+    box.setAttribute('y', cy - 35);
+    box.setAttribute('width', 56);
+    box.setAttribute('height', 70);
+    box.setAttribute('fill', 'url(#outGrad)');
+    box.setAttribute('stroke', '#f57d00');
+    box.setAttribute('stroke-width', 1.5);
+    box.setAttribute('rx', 3);
+    g.appendChild(box);
+    
+    const text1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text1.setAttribute('x', x);
+    text1.setAttribute('y', cy - 18);
+    text1.setAttribute('text-anchor', 'middle');
+    text1.setAttribute('font-size', '10');
+    text1.setAttribute('font-weight', 'bold');
+    text1.setAttribute('fill', 'white');
+    text1.textContent = 'Output';
+    g.appendChild(text1);
+    
+    const text2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text2.setAttribute('x', x);
+    text2.setAttribute('y', cy + 8);
+    text2.setAttribute('text-anchor', 'middle');
+    text2.setAttribute('font-size', '8');
+    text2.setAttribute('fill', 'white');
+    text2.textContent = `${neurons}`;
+    g.appendChild(text2);
+    
+    svg.appendChild(g);
+}
+
+function drawMLPLegend(svg, x, y) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    
+    const items = [
+        { label: 'Input', color: '#e8f5e9', stroke: '#2e7d32' },
+        { label: 'Hidden', color: 'url(#hiddenGrad)', stroke: '#c5221f' },
+        { label: 'Output', color: 'url(#outGrad)', stroke: '#f57d00' }
+    ];
+    
+    let yOffset = y;
+    items.forEach(item => {
+        const box = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        box.setAttribute('x', x);
+        box.setAttribute('y', yOffset);
+        box.setAttribute('width', 10);
+        box.setAttribute('height', 10);
+        box.setAttribute('fill', item.color);
+        box.setAttribute('stroke', item.stroke);
+        box.setAttribute('stroke-width', 0.5);
+        box.setAttribute('rx', 2);
+        g.appendChild(box);
+        
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', x + 14);
+        text.setAttribute('y', yOffset + 8);
+        text.setAttribute('font-size', '9');
+        text.setAttribute('fill', '#333');
+        text.textContent = item.label;
+        g.appendChild(text);
+        
+        yOffset += 13;
+    });
+    
+    svg.appendChild(g);
+}
+
 // ==================== INITIALIZATION ====================
 
 buildInputFields();
@@ -856,3 +1306,4 @@ updateLossChart();
     </script>
 </body>
 </html>
+
